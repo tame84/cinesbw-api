@@ -42,7 +42,6 @@ interface TmdbMovieDetailsResponse {
     genres: {
         name: string;
     }[];
-    original_language: string;
     overview: string;
     poster_path: string;
     release_date: string;
@@ -162,7 +161,7 @@ const getMoviesTmdbId = async () => {
                 const imdbId = page.$("[data-vod-imdb]").attr("data-vod-imdb");
                 const cinenewsId = page.$("[data-tbl-id]").attr("data-tbl-id");
                 if (!imdbId || !cinenewsId) {
-                    unfetchedMovies.push({ url: page.pageUrl, imdbId: null, cinenewsId: null });
+                    unfetchedMovies.push({ url: page.pageUrl, imdbId: null, cinenewsId: cinenewsId || null });
                     return null;
                 }
 
@@ -193,70 +192,150 @@ const getMoviesTmdbId = async () => {
     return { fetchedMovies, unfetchedMovies };
 };
 
-const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
+const getMoviesShowtimes = async (cinenewsId: string) => {
+    let shows = [];
+    const today = new Date();
+    let dateIterator = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    while (true) {
+        const showtimesResponse = await axios.get(
+            `${CINENEWS_BASE_URL}/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${cinenewsId}&v3&regionId=3&selDate=${formatDate(
+                dateIterator
+            )}`,
+            {
+                headers: generateHeaders(),
+            }
+        );
+        if (showtimesResponse.status !== 200) {
+            return null;
+        }
+        const showtimesData: CinenewsShowtimesResponse = showtimesResponse.data;
+
+        if (showtimesData.data.length === 0) {
+            if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
+                break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 1000));
+            dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
+            continue;
+        }
+
+        shows.push({
+            date: createUTCDate(dateIterator.getDate(), dateIterator.getMonth() + 1, dateIterator.getFullYear()),
+            shows: await Promise.all(
+                showtimesData.data[0].data.map(async (cinema) => {
+                    return {
+                        cinema: {
+                            yellowName: cinema.YellowName,
+                            yellowId: cinema.YellowID,
+                        },
+                        shows: cinema.data.map((show) => {
+                            const [dateStr, timeStr] = show.ShowDateTime.split(" ");
+                            const [day, month, year] = dateStr.split("-").map(Number);
+                            const [hours, minutes] = timeStr.split(":").map(Number);
+                            const date = createUTCDate(day, month, year);
+                            const dateTime = createUTCDateTime(date, hours, minutes);
+
+                            return {
+                                showDateTime: dateTime,
+                                version: {
+                                    short: show.mVersion,
+                                    long: show.mVersionLong,
+                                },
+                            };
+                        }),
+                    };
+                })
+            ),
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 750 + Math.random() * 1000));
+        dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
+    }
+
+    return shows;
+};
+
+const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]) => {
+    return (
+        await Promise.all(
+            unfetchedMovies.map(async (movie) => {
+                if (!movie.cinenewsId) {
+                    return null;
+                }
+                const shows = await getMoviesShowtimes(movie.cinenewsId);
+
+                const response = await axios.get(movie.url, {
+                    headers: generateHeaders(),
+                });
+                if (response.status !== 200) {
+                    return null;
+                }
+                const data = response.data;
+                const $ = cheerio.load(data);
+
+                const $detailsHeader = $(".detail-header");
+                const title = $detailsHeader.find(".detail-header-title h1").text().trim();
+                const releaseDateStr = $detailsHeader
+                    .find(".detail-header-more [itemprop='datePublished']")
+                    .text()
+                    .trim();
+                const [year, month, day] = releaseDateStr.split("-").map(Number);
+                const releaseDate = createUTCDate(day, month, year);
+                const duration = Number(
+                    $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim()
+                );
+                const genres = $detailsHeader
+                    .find(".detail-header-more b:contains('Genre :') ~ a.c")
+                    .map((_, el) => $(el).text().trim())
+                    .get();
+                const directors = $detailsHeader
+                    .find(".detail-header-more [itemprop='director']")
+                    .map((_, el) => $(el).text().trim())
+                    .get();
+                const actors = $("[data-on-tab='casting'] h4 [itemprop='url']")
+                    .slice(0, 5)
+                    .map((_, el) => $(el).text().trim())
+                    .get();
+                const overview = $detailsHeader.find(".detail-header-description").text().trim();
+                const backdropUrl =
+                    $("[data-on-tab='photos'] a[data-bg]").attr("data-bg")?.trim().split("/q")[1] || null;
+                const posterUrl =
+                    $detailsHeader.find(".detail-header-poster img").attr("data-src")?.trim().split("/q")[1] || null;
+
+                return {
+                    movie: {
+                        title,
+                        releaseDate,
+                        duration,
+                        genres,
+                        directors,
+                        actors,
+                        overview,
+                        backdrop: {
+                            medium: `https://www.cinenews.be/image/x1386x780/q${backdropUrl}`,
+                            large: `https://www.cinenews.be/image/x2275x1280/q${backdropUrl}`,
+                        },
+                        posterUrl,
+                        poster: {
+                            small: `https://www.cinenews.be/image/s185/q${posterUrl}`,
+                            medium: `https://www.cinenews.be/image/s342/q${posterUrl}`,
+                            large: `https://www.cinenews.be/image/s500/q${posterUrl}`,
+                        },
+                        videos: [],
+                    },
+                    shows,
+                };
+            })
+        )
+    ).filter((movie) => movie !== null);
+};
+
+const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]) => {
     return await Promise.all(
         fetchedMovies.map(async (movie) => {
-            let shows = [];
-            const today = new Date();
-            let dateIterator = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            while (true) {
-                const showtimesResponse = await axios.get(
-                    `${CINENEWS_BASE_URL}/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${
-                        movie.cinenewsId
-                    }&v3&regionId=3&selDate=${formatDate(dateIterator)}`,
-                    {
-                        headers: generateHeaders(),
-                    }
-                );
-                if (showtimesResponse.status !== 200) {
-                    return { url: movie.url, data: null };
-                }
-                const showtimesData: CinenewsShowtimesResponse = showtimesResponse.data;
-
-                if (showtimesData.data.length === 0) {
-                    if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
-                        break;
-                    }
-                    await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 1000));
-                    dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
-                    continue;
-                }
-
-                shows.push({
-                    date: createUTCDate(
-                        dateIterator.getDate(),
-                        dateIterator.getMonth() + 1,
-                        dateIterator.getFullYear()
-                    ),
-                    shows: await Promise.all(
-                        showtimesData.data[0].data.map(async (cinema) => {
-                            return {
-                                cinema: {
-                                    yellowName: cinema.YellowName,
-                                    yellowId: cinema.YellowID,
-                                },
-                                shows: cinema.data.map((show) => {
-                                    const [dateStr, timeStr] = show.ShowDateTime.split(" ");
-                                    const [day, month, year] = dateStr.split("-").map(Number);
-                                    const [hours, minutes] = timeStr.split(":").map(Number);
-                                    const date = createUTCDate(day, month, year);
-                                    const dateTime = createUTCDateTime(date, hours, minutes);
-
-                                    return {
-                                        showDateTime: dateTime,
-                                        version: {
-                                            short: show.mVersion,
-                                            long: show.mVersionLong,
-                                        },
-                                    };
-                                }),
-                            };
-                        })
-                    ),
-                });
-
-                await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 1000));
-                dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
+            const shows = await getMoviesShowtimes(movie.cinenewsId);
+            if (!shows) {
+                return { url: movie.url, data: null };
             }
 
             const response = await axios.get(
@@ -287,7 +366,6 @@ const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
                         )
                         .map((director) => director.name),
                     actors: data.credits.cast.map((actor) => actor.name).slice(0, 5),
-                    originalLanguage: data.original_language,
                     overview: data.overview,
                     backdrop: {
                         medium: `https://image.tmdb.org/t/p/w780${data.backdrop_path}`,
@@ -305,7 +383,6 @@ const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
                                 video.type.toLowerCase() === "trailer" && {
                                     name: video.name,
                                     key: video.key,
-                                    type: video.type,
                                 }
                         )
                         .filter(Boolean),
@@ -321,9 +398,10 @@ const app = new Hono().get("/scrape", async (c) => {
 
     try {
         const moviesTmdbId = await getMoviesTmdbId();
-        const fetchedMoviesData = await getMoviesData(moviesTmdbId.fetchedMovies);
+        const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
+        const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
 
-        return c.json(fetchedMoviesData);
+        return c.json([...fetchedMoviesData, ...unfetchedMoviesData]);
     } catch (error) {
         console.error(error);
         return c.json({ error: "An error occurred during scraping." }, 500);
