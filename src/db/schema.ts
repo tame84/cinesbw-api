@@ -17,7 +17,6 @@ export const moviesTable = pgTable("movies", {
     genres: text("genres").array(),
     directors: text("directors").array(),
     actors: text("actors").array(),
-    originalLanguage: text("original_language"),
     overview: text("overview"),
     backdrop: jsonb("backdrop"),
     poster: jsonb("poster"),
@@ -31,7 +30,7 @@ export const showsTable = pgTable(
         date: date("date", { mode: "date" }).notNull(),
         movieUuid: uuid("movie_uuid")
             .notNull()
-            .references(() => moviesTable.uuid),
+            .references(() => moviesTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
     },
     (t) => [unique().on(t.date, t.movieUuid)]
 );
@@ -44,10 +43,10 @@ export const schedulesTable = pgTable(
         versionLong: text("version_long").notNull(),
         showUuid: uuid("show_uuid")
             .notNull()
-            .references(() => showsTable.uuid),
+            .references(() => showsTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
         cinemaUuid: uuid("cinema_uuid")
             .notNull()
-            .references(() => cinemasTable.uuid),
+            .references(() => cinemasTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
     },
     (t) => [unique().on(t.cinemaUuid, t.showUuid, t.version, t.dateTime)]
 );
