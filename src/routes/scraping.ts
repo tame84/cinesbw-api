@@ -2,6 +2,7 @@ import axios from "axios";
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
 import UserAgent from "user-agents";
+import { createUTCDate, createUTCDateTime } from "src/utils/date";
 
 interface TmdbBFindResponse {
     movie_results: {
@@ -96,6 +97,13 @@ const generateHeaders = () => {
     };
 };
 
+const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${year}-${month}-${day}`;
+};
+
 const getMoviesTmdbId = async () => {
     const movies = new Set<string>();
 
@@ -185,13 +193,6 @@ const getMoviesTmdbId = async () => {
     return { fetchedMovies, unfetchedMovies };
 };
 
-const formatDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return `${year}-${month}-${day}`;
-};
-
 const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
     return await Promise.all(
         fetchedMovies.map(async (movie) => {
@@ -199,8 +200,6 @@ const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
             const today = new Date();
             let dateIterator = new Date(today.getFullYear(), today.getMonth(), today.getDate());
             while (true) {
-                console.log(movie.url, dateIterator);
-
                 const showtimesResponse = await axios.get(
                     `${CINENEWS_BASE_URL}/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${
                         movie.cinenewsId
@@ -224,7 +223,11 @@ const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
                 }
 
                 shows.push({
-                    date: dateIterator,
+                    date: createUTCDate(
+                        dateIterator.getDate(),
+                        dateIterator.getMonth() + 1,
+                        dateIterator.getFullYear()
+                    ),
                     shows: await Promise.all(
                         showtimesData.data[0].data.map(async (cinema) => {
                             return {
@@ -233,11 +236,14 @@ const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
                                     yellowId: cinema.YellowID,
                                 },
                                 shows: cinema.data.map((show) => {
-                                    const [date, time] = show.ShowDateTime.split(" ");
+                                    const [dateStr, timeStr] = show.ShowDateTime.split(" ");
+                                    const [day, month, year] = dateStr.split("-").map(Number);
+                                    const [hours, minutes] = timeStr.split(":").map(Number);
+                                    const date = createUTCDate(day, month, year);
+                                    const dateTime = createUTCDateTime(date, hours, minutes);
 
                                     return {
-                                        date,
-                                        time,
+                                        showDateTime: dateTime,
                                         version: {
                                             short: show.mVersion,
                                             long: show.mVersionLong,
@@ -303,8 +309,8 @@ const getMoviesData = async (fetchedMovies: FetchedMovie[]) => {
                                 }
                         )
                         .filter(Boolean),
-                    shows,
                 },
+                shows,
             };
         })
     );
