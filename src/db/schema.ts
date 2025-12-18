@@ -1,0 +1,53 @@
+import { date, integer, jsonb, pgTable, text, time, unique, uuid } from "drizzle-orm/pg-core";
+
+export const cinemasTable = pgTable("cinemas", {
+    uuid: uuid("uuid").primaryKey().defaultRandom(),
+    yellowId: text("yellow_id").notNull().unique(),
+    name: text("name").notNull(),
+    website: text("website").notNull(),
+});
+
+export const moviesTable = pgTable("movies", {
+    uuid: uuid("uuid").primaryKey().defaultRandom(),
+    tmdbId: integer("tmdb_id"),
+    slug: text("slug").notNull().unique(),
+    title: text("title").notNull(),
+    releaseDate: date("release_date", { mode: "date" }),
+    runtime: integer("runtime"),
+    genres: text("genres").array(),
+    directors: text("directors").array(),
+    actors: text("actors").array(),
+    originalLanguage: text("original_language"),
+    overview: text("overview"),
+    backdrop: jsonb("backdrop"),
+    poster: jsonb("poster"),
+    videos: jsonb("videos").array(),
+});
+
+export const showsTable = pgTable(
+    "shows",
+    {
+        uuid: uuid("uuid").primaryKey().defaultRandom(),
+        date: date("date", { mode: "date" }).notNull(),
+        movieUuid: uuid("movie_uuid")
+            .notNull()
+            .references(() => moviesTable.uuid),
+    },
+    (t) => [unique().on(t.date, t.movieUuid)]
+);
+
+export const schedulesTable = pgTable(
+    "schedules",
+    {
+        dateTime: time("date_time", { withTimezone: true }).notNull(),
+        version: text("version").notNull(),
+        versionLong: text("version_long").notNull(),
+        showUuid: uuid("show_uuid")
+            .notNull()
+            .references(() => showsTable.uuid),
+        cinemaUuid: uuid("cinema_uuid")
+            .notNull()
+            .references(() => cinemasTable.uuid),
+    },
+    (t) => [unique().on(t.cinemaUuid, t.showUuid, t.version, t.dateTime)]
+);
