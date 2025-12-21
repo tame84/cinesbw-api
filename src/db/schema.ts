@@ -1,4 +1,4 @@
-import { date, integer, jsonb, pgTable, text, time, unique, uuid } from "drizzle-orm/pg-core";
+import { date, integer, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const cinemasTable = pgTable("cinemas", {
     id: integer("id").primaryKey(),
@@ -36,7 +36,7 @@ export const showsTable = pgTable(
 export const showtimesTable = pgTable(
     "showtimes",
     {
-        dateTime: date("date_time", { mode: "date" }).notNull(),
+        dateTime: timestamp("date_time", { mode: "date" }).notNull(),
         version: text("version").notNull(),
         versionLong: text("version_long").notNull(),
         showUuid: uuid("show_uuid")
