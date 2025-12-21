@@ -1,15 +1,13 @@
 import { date, integer, jsonb, pgTable, text, time, unique, uuid } from "drizzle-orm/pg-core";
 
 export const cinemasTable = pgTable("cinemas", {
-    uuid: uuid("uuid").primaryKey().defaultRandom(),
-    yellowId: text("yellow_id").notNull().unique(),
+    id: integer("id").primaryKey(),
     name: text("name").notNull(),
     website: text("website").notNull(),
 });
 
 export const moviesTable = pgTable("movies", {
     uuid: uuid("uuid").primaryKey().defaultRandom(),
-    tmdbId: integer("tmdb_id"),
     slug: text("slug").notNull().unique(),
     title: text("title").notNull(),
     releaseDate: date("release_date", { mode: "date" }),
@@ -35,18 +33,18 @@ export const showsTable = pgTable(
     (t) => [unique().on(t.date, t.movieUuid)]
 );
 
-export const schedulesTable = pgTable(
-    "schedules",
+export const showtimesTable = pgTable(
+    "showtimes",
     {
-        dateTime: time("date_time", { withTimezone: true }).notNull(),
+        dateTime: date("date_time", { mode: "date" }).notNull(),
         version: text("version").notNull(),
         versionLong: text("version_long").notNull(),
         showUuid: uuid("show_uuid")
             .notNull()
             .references(() => showsTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
-        cinemaUuid: uuid("cinema_uuid")
+        cinemaId: integer("cinema_id")
             .notNull()
-            .references(() => cinemasTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
+            .references(() => cinemasTable.id, { onDelete: "cascade", onUpdate: "cascade" }),
     },
-    (t) => [unique().on(t.cinemaUuid, t.showUuid, t.version, t.dateTime)]
+    (t) => [unique().on(t.cinemaId, t.showUuid, t.version, t.dateTime)]
 );
