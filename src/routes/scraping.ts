@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
 import UserAgent from "user-agents";
@@ -441,31 +441,38 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
 
 const app = new Hono().get("/scrape", async (c) => {
     const startTime = performance.now();
+    const max403Retries = 3;
 
-    try {
-        const moviesTmdbId = await getMoviesTmdbId();
-        const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
-        const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
+    for (let attemp = 1; attemp <= max403Retries; attemp++) {
+        try {
+            const moviesTmdbId = await getMoviesTmdbId();
+            const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
+            const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
 
-        const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb([
-            ...fetchedMoviesData,
-            ...unfetchedMoviesData,
-        ]);
+            const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb([
+                ...fetchedMoviesData,
+                ...unfetchedMoviesData,
+            ]);
 
-        return c.json({
-            timeToCompleteMs: Number((performance.now() - startTime).toFixed(0)),
-            scrapedMoviesCount: fetchedMoviesData.length + unfetchedMoviesData.length,
-            insertedMoviesCount,
-            insertedShowsCount,
-            insertedShowtimesCount,
-        });
-    } catch (error) {
-        console.error(error);
-        return c.json({ error: "An error occurred during scraping." }, 500);
-    } finally {
-        const endTime = performance.now();
-        const elapsedTime = endTime - startTime;
-        console.log(`Scraping completed in ${elapsedTime.toFixed(0)} milliseconds.`);
+            return c.json({
+                timeToCompleteMs: Number((performance.now() - startTime).toFixed(0)),
+                scrapedMoviesCount: fetchedMoviesData.length + unfetchedMoviesData.length,
+                insertedMoviesCount,
+                insertedShowsCount,
+                insertedShowtimesCount,
+            });
+        } catch (error) {
+            console.error(error);
+            if (error instanceof AxiosError && error.status === 403 && attemp < max403Retries) {
+                console.log(`Access denied (403). Retrying... Attempt ${attemp}/^${max403Retries - 1}`);
+                continue;
+            }
+            return c.json({ error: "An error occurred during scraping." }, 500);
+        } finally {
+            const endTime = performance.now();
+            const elapsedTime = endTime - startTime;
+            console.log(`Scraping completed in ${elapsedTime.toFixed(0)} milliseconds.`);
+        }
     }
 });
 
