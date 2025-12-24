@@ -4,7 +4,7 @@ import * as cheerio from "cheerio";
 import UserAgent from "user-agents";
 import { createUTCDate, createUTCDateTime } from "src/utils/date";
 import { Movie } from "src/utils/types";
-import { addMoviesToDb } from "src/db";
+import { addMoviesToDb, removeMoviesFromDb } from "src/db";
 
 interface TmdbBFindResponse {
     movie_results: {
@@ -157,7 +157,8 @@ const getMoviesTmdbId = async () => {
                         headers: generateHeaders(),
                     })
                     .catch((error) => {
-                        throw new Error(`Failed to fetch movie page at ${pageUrl}: ${error}`);
+                        console.log(`Failed to fetch movie page at ${pageUrl}`);
+                        throw error;
                     });
                 if (response.status !== 200) {
                     unfetchedMovies.push({ url: pageUrl, imdbId: null, cinenewsId: null });
@@ -191,7 +192,8 @@ const getMoviesTmdbId = async () => {
                         },
                     })
                     .catch((error) => {
-                        throw new Error(`Failed to fetch TMDb data for IMDb ID ${imdbId}: ${error}`);
+                        console.log(`Failed to fetch TMDb data for IMDb ID ${imdbId}`);
+                        throw error;
                     });
                 if (response.status !== 200) {
                     unfetchedMovies.push({ url: page.pageUrl, imdbId, cinenewsId });
@@ -226,9 +228,8 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
                 }
             )
             .catch((error) => {
-                throw new Error(
-                    `Failed to fetch showtimes for movie ID ${cinenewsId} on ${formatDate(dateIterator)}: ${error}`
-                );
+                console.log(`Failed to fetch showtimes for movie ID ${cinenewsId} on ${formatDate(dateIterator)}`);
+                throw error;
             });
         if (showtimesResponse.status !== 200) {
             return null;
@@ -297,7 +298,8 @@ const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise
                         headers: generateHeaders(),
                     })
                     .catch((error) => {
-                        throw new Error(`Failed to fetch movie page at ${movie.url}: ${error}`);
+                        console.log(`Failed to fetch movie page at ${movie.url}`);
+                        throw error;
                     });
                 if (response.status !== 200) {
                     return null;
@@ -385,7 +387,8 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
                         }
                     )
                     .catch((error) => {
-                        throw new Error(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}: ${error}`);
+                        console.log(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
+                        throw error;
                     });
                 if (response.status !== 200) {
                     return null;
@@ -453,6 +456,7 @@ const app = new Hono().get("/scrape", async (c) => {
                 ...fetchedMoviesData,
                 ...unfetchedMoviesData,
             ]);
+            const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
 
             return c.json({
                 timeToCompleteMs: Number((performance.now() - startTime).toFixed(0)),
@@ -460,25 +464,26 @@ const app = new Hono().get("/scrape", async (c) => {
                 insertedMoviesCount,
                 insertedShowsCount,
                 insertedShowtimesCount,
+                removedShowsCount,
+                removedMoviesCount,
             });
         } catch (error) {
-            console.error(error);
             if (error instanceof AxiosError && error.status === 403) {
                 if (attemp < max403Retries) {
-                    console.log(`Access denied (403). Retrying... Attempt ${attemp}/^${max403Retries - 1}`);
+                    console.log(`Access denied (403). Retrying... Attempt ${attemp}/${max403Retries - 1}`);
                     continue;
                 } else {
                     console.log(`Access denied (403). Max retries reached. Aborting.`);
                     return c.json({ error: "Access denied (403). Max retries reached." }, 403);
                 }
             }
+            console.error(error);
             return c.json({ error: "An error occurred during scraping." }, 500);
-        } finally {
-            const endTime = performance.now();
-            const elapsedTime = endTime - startTime;
-            console.log(`Scraping completed in ${elapsedTime.toFixed(0)} milliseconds.`);
         }
     }
+    const endTime = performance.now();
+    const elapsedTime = endTime - startTime;
+    console.log(`Scraping completed in ${elapsedTime.toFixed(0)} milliseconds.`);
 });
 
 export default app;

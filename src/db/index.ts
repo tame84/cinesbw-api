@@ -1,3 +1,4 @@
+import { eq, lt, notExists } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { version } from "os";
 import { moviesTable, showsTable, showtimesTable } from "src/db/schema";
@@ -87,4 +88,24 @@ export const addMoviesToDb = async (movies: Movie[]) => {
     );
 
     return [insertedMovies.length, insertedShowsCount.count, insertedShowsCount.insertedShowtimesCount];
+};
+
+export const removeMoviesFromDb = async () => {
+    const today = new Date();
+
+    const returnedCounts = await db.transaction(async (tx) => {
+        const deletedShows = await tx
+            .delete(showsTable)
+            .where(lt(showsTable.date, today))
+            .returning({ movueUuid: showsTable.movieUuid });
+        if (deletedShows.length === 0) return [0, 0];
+
+        const deletedMovies = await tx
+            .delete(moviesTable)
+            .where(notExists(tx.select().from(showsTable).where(eq(showsTable.movieUuid, moviesTable.uuid))))
+            .returning({ uuid: moviesTable.uuid });
+
+        return [deletedShows.length, deletedMovies.length];
+    });
+    return returnedCounts;
 };
