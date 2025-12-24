@@ -463,9 +463,14 @@ const app = new Hono().get("/scrape", async (c) => {
             });
         } catch (error) {
             console.error(error);
-            if (error instanceof AxiosError && error.status === 403 && attemp < max403Retries) {
-                console.log(`Access denied (403). Retrying... Attempt ${attemp}/^${max403Retries - 1}`);
-                continue;
+            if (error instanceof AxiosError && error.status === 403) {
+                if (attemp < max403Retries) {
+                    console.log(`Access denied (403). Retrying... Attempt ${attemp}/^${max403Retries - 1}`);
+                    continue;
+                } else {
+                    console.log(`Access denied (403). Max retries reached. Aborting.`);
+                    return c.json({ error: "Access denied (403). Max retries reached." }, 403);
+                }
             }
             return c.json({ error: "An error occurred during scraping." }, 500);
         } finally {
