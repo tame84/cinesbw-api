@@ -5,6 +5,7 @@ import UserAgent from "user-agents";
 import { createUTCDate, createUTCDateTime } from "src/utils/date";
 import { Movie } from "src/utils/types";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
+import { log } from "console";
 
 interface TmdbBFindResponse {
     movie_results: {
@@ -448,6 +449,7 @@ const app = new Hono().get("/scrape", async (c) => {
 
     for (let attemp = 1; attemp <= max403Retries; attemp++) {
         try {
+            log(`Scraping attempt ${attemp}...`);
             const moviesTmdbId = await getMoviesTmdbId();
             const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
             const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
