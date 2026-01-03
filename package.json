@@ -9,13 +9,15 @@
     },
     "dependencies": {
         "@hono/node-server": "^1.19.6",
+        "@hono/valibot-validator": "^0.6.1",
         "axios": "^1.13.2",
         "cheerio": "^1.1.2",
         "dotenv": "^17.2.3",
         "drizzle-orm": "^0.45.1",
         "hono": "^4.11.1",
         "pg": "^8.16.3",
-        "user-agents": "^1.1.669"
+        "user-agents": "^1.1.669",
+        "valibot": "^1.2.0"
     },
     "devDependencies": {
         "@types/node": "^20.11.17",

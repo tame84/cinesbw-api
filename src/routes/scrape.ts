@@ -443,7 +443,7 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
     return movies;
 };
 
-const app = new Hono().get("/scrape", async (c) => {
+const app = new Hono().get("/", async (c) => {
     const startTime = performance.now();
     const max403Retries = 3;
 
