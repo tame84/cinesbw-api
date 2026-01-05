@@ -1,5 +1,5 @@
 import { vValidator } from "@hono/valibot-validator";
-import { eq } from "drizzle-orm";
+import { and, arrayOverlaps, eq, inArray, like, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "src/db";
 import { cinemasTable, moviesTable, showsTable, showtimesTable } from "src/db/schema";
@@ -102,7 +102,7 @@ const schema = v.object({
             v.transform((str) =>
                 str
                     .split(",")
-                    .map((s) => s.toLowerCase().trim())
+                    .map((s) => s.trim())
                     .filter(Boolean)
             ),
             v.array(v.string())
@@ -135,6 +135,18 @@ const app = new Hono().get(
             return c.json({ error: "Date must be today or in the future" }, 400);
         }
 
+        const cinemasFilter = cinemas || null;
+        const versionsFilter = versions || null;
+        const genresFilter = genres || null;
+
+        const showtimesFilters = [
+            cinemasFilter ? inArray(showtimesTable.cinemaId, cinemasFilter) : undefined,
+            versionsFilter ? or(...versionsFilter.map((v) => like(showtimesTable.version, `${v}%`))) : undefined,
+        ].filter(Boolean);
+        const moviesFilters = [genresFilter ? arrayOverlaps(moviesTable.genres, genresFilter) : undefined].filter(
+            Boolean
+        );
+
         const todaySelectedShows = (await db
             .select({
                 show: {
@@ -160,9 +172,9 @@ const app = new Hono().get(
             })
             .from(showsTable)
             .where(eq(showsTable.date, dateFilter))
-            .leftJoin(showtimesTable, eq(showsTable.uuid, showtimesTable.showUuid))
-            .leftJoin(moviesTable, eq(showsTable.movieUuid, moviesTable.uuid))
-            .leftJoin(cinemasTable, eq(showtimesTable.cinemaId, cinemasTable.id))
+            .innerJoin(showtimesTable, and(eq(showsTable.uuid, showtimesTable.showUuid), ...showtimesFilters))
+            .innerJoin(moviesTable, and(eq(showsTable.movieUuid, moviesTable.uuid), ...moviesFilters))
+            .innerJoin(cinemasTable, eq(showtimesTable.cinemaId, cinemasTable.id))
             .orderBy(moviesTable.slug, showtimesTable.dateTime)) as DBShow[];
 
         const showsMap = new Map<string, TodayShow>();
