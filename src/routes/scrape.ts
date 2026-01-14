@@ -21,6 +21,7 @@ interface UnfetchedMovie {
 
 interface FetchedMovie {
     url: string;
+    imdbId: string;
     tmdbId: number;
     cinenewsId: string;
 }
@@ -204,6 +205,7 @@ const getMoviesTmdbId = async () => {
 
                 return {
                     url: page.pageUrl,
+                    imdbId,
                     tmdbId: data.movie_results[0].id,
                     cinenewsId,
                 };
@@ -339,6 +341,8 @@ const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise
 
                 return {
                     movie: {
+                        imdbId: movie.imdbId,
+                        tmdbId: null,
                         slug: slugifyTitle(title, movie.cinenewsId),
                         title,
                         releaseDate,
@@ -400,6 +404,8 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
 
                 return {
                     movie: {
+                        imdbId: movie.imdbId,
+                        tmdbId: movie.tmdbId,
                         slug: slugifyTitle(data.title, movie.cinenewsId),
                         title: data.title,
                         releaseDate: releaseDate,

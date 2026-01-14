@@ -8,6 +8,8 @@ export const cinemasTable = pgTable("cinemas", {
 
 export const moviesTable = pgTable("movies", {
     uuid: uuid("uuid").primaryKey().defaultRandom(),
+    tmdbId: integer("tmdb_id").unique(),
+    imdbId: text("imdb_id").unique(),
     slug: text("slug").notNull().unique(),
     title: text("title").notNull(),
     releaseDate: date("release_date", { mode: "date" }),

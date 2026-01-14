@@ -1,6 +1,5 @@
 import { eq, lt, notExists } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { version } from "os";
 import { moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { Movie } from "src/utils/types";
 
@@ -8,9 +7,11 @@ export const db = drizzle(process.env.DATABASE_URL!);
 
 export const addMoviesToDb = async (movies: Movie[]) => {
     const moviesToInsert = movies.map((m) => ({
+        imdbId: m.movie.imdbId,
+        tmdbId: m.movie.tmdbId,
         slug: m.movie.slug,
         title: m.movie.title,
-        releaseDate: m.movie.releaseDate,
+        releaseDate: m.movie.releaseDate && !isNaN(m.movie.releaseDate.getTime()) ? m.movie.releaseDate : null,
         runtime: m.movie.runtime,
         genres: m.movie.genres,
         directors: m.movie.directors,

@@ -17,6 +17,8 @@ interface Show {
 
 export interface Movie {
     movie: {
+        imdbId: string | null;
+        tmdbId: number | null;
         slug: string;
         title: string;
         releaseDate: Date;
