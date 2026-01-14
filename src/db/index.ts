@@ -1,5 +1,5 @@
+import { drizzle } from "drizzle-orm/neon-http";
 import { eq, lt, notExists } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { Movie } from "src/utils/types";
 
