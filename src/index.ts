@@ -11,6 +11,10 @@ import cinemasRoutes from "./routes/cinemas";
 
 const app = new Hono()
     .use(logger())
+    .onError((err, c) => {
+        console.error(err);
+        return c.text("Internal Server Error", 500);
+    })
     .route("/scrape", scrapingRoutes)
     .route("/shows", showsRoutes)
     .route("/movie", movieRoutes)
