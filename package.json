@@ -3,7 +3,7 @@
     "type": "module",
     "scripts": {
         "dev": "tsx watch src/index.ts",
-        "build": "tsc",
+        "build": "tsc && tsc-alias",
         "start": "node dist/index.js",
         "db:push": "npx drizzle-kit push"
     },

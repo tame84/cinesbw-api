@@ -5,6 +5,8 @@ import UserAgent from "user-agents";
 import { createUTCDate, createUTCDateTime } from "src/utils/date";
 import { Movie } from "src/utils/types";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
+import { vValidator } from "@hono/valibot-validator";
+import * as v from "valibot";
 
 interface TmdbBFindResponse {
     movie_results: {
@@ -448,47 +450,55 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
     return movies;
 };
 
-const app = new Hono().get("/", async (c) => {
-    const startTime = performance.now();
-    const max403Retries = 2;
+const app = new Hono().get(
+    "/",
+    vValidator("query", v.object({ apiKey: v.string() }), (result, c) => {
+        if (!result.success || result.output.apiKey !== process.env.SCRAPE_API_KEY) {
+            return c.json({ error: "Unauthorized" }, 401);
+        }
+    }),
+    async (c) => {
+        const startTime = performance.now();
+        const max403Retries = 2;
 
-    for (let attemp = 0; attemp <= max403Retries; attemp++) {
-        try {
-            const moviesTmdbId = await getMoviesTmdbId();
-            const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
-            const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
+        for (let attemp = 0; attemp <= max403Retries; attemp++) {
+            try {
+                const moviesTmdbId = await getMoviesTmdbId();
+                const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
+                const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
 
-            const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb([
-                ...fetchedMoviesData,
-                ...unfetchedMoviesData,
-            ]);
-            const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
+                const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb([
+                    ...fetchedMoviesData,
+                    ...unfetchedMoviesData,
+                ]);
+                const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
 
-            return c.json({
-                timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
-                counts: {
-                    scrapedMovies: fetchedMoviesData.length + unfetchedMoviesData.length,
-                    insertedMovies: insertedMoviesCount,
-                    insertedShows: insertedShowsCount,
-                    insertedShowtimes: insertedShowtimesCount,
-                    removedMovies: removedMoviesCount,
-                    removedShows: removedShowsCount,
-                },
-            });
-        } catch (error) {
-            if (error instanceof AxiosError && error.status === 403) {
-                if (attemp < max403Retries) {
-                    console.log(`Access denied (403). Retrying... Attempt ${attemp}/${max403Retries}`);
-                    continue;
-                } else {
-                    console.log(`Access denied (403). Max retries reached.`);
-                    return c.json({ error: "Access denied (403). Max retries reached." }, 403);
+                return c.json({
+                    timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
+                    counts: {
+                        scrapedMovies: fetchedMoviesData.length + unfetchedMoviesData.length,
+                        insertedMovies: insertedMoviesCount,
+                        insertedShows: insertedShowsCount,
+                        insertedShowtimes: insertedShowtimesCount,
+                        removedMovies: removedMoviesCount,
+                        removedShows: removedShowsCount,
+                    },
+                });
+            } catch (error) {
+                if (error instanceof AxiosError && error.status === 403) {
+                    if (attemp < max403Retries) {
+                        console.log(`Access denied (403). Retrying... Attempt ${attemp}/${max403Retries}`);
+                        continue;
+                    } else {
+                        console.log(`Access denied (403). Max retries reached.`);
+                        return c.json({ error: "Access denied (403). Max retries reached." }, 403);
+                    }
                 }
+                console.error(error);
+                return c.json({ error: "An error occurred during scraping." }, 500);
             }
-            console.error(error);
-            return c.json({ error: "An error occurred during scraping." }, 500);
         }
     }
-});
+);
 
 export default app;
