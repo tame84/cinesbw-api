@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { Movie } from "src/utils/types";
 
-export const db = drizzle(process.env.DATABASE_URL!);
+export const db = drizzle(process.env.NEON_DATABASE_URL!);
 
 export const addMoviesToDb = async (movies: Movie[]) => {
     const moviesToInsert = movies.map((m) => ({
