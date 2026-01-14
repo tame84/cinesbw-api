@@ -4,16 +4,18 @@ import { db } from "src/db";
 import { cinemasTable, moviesTable, showsTable, showtimesTable } from "src/db/schema";
 
 const app = new Hono()
+    .basePath("/:slug")
     .get("/", async (c) => {
-        const slug = c.req.param("slug") as string;
+        const slug = c.req.param("slug");
 
         const movie = await db
             .select({
+                imdbId: moviesTable.imdbId,
                 title: moviesTable.title,
                 releaseDate: moviesTable.releaseDate,
                 runtime: moviesTable.runtime,
                 genres: moviesTable.genres,
-                direcotrs: moviesTable.directors,
+                directors: moviesTable.directors,
                 actors: moviesTable.actors,
                 overview: moviesTable.overview,
                 backdrop: moviesTable.backdrop,
@@ -22,13 +24,12 @@ const app = new Hono()
             })
             .from(moviesTable)
             .where(eq(moviesTable.slug, slug));
-
         return c.json({ movie: movie[0] });
     })
     .get("/shows", async (c) => {
-        const slug = c.req.param("slug") as string;
+        const slug = c.req.param("slug");
 
-        const selectedShows = await db
+        const shows = await db
             .select({
                 show: {
                     uuid: showsTable.uuid,
@@ -54,17 +55,16 @@ const app = new Hono()
             .innerJoin(cinemasTable, eq(showtimesTable.cinemaId, cinemasTable.id))
             .orderBy(showtimesTable.dateTime);
 
-        const showsMap = new Map();
-        for (const show of selectedShows) {
+        const showsMerged = new Map();
+        for (const show of shows) {
             const showKey = show.show.uuid;
-            if (!showsMap.has(showKey)) {
-                showsMap.set(showKey, {
+            if (!showsMerged.has(showKey)) {
+                showsMerged.set(showKey, {
                     date: show.show.date,
                     showtimes: [],
                 });
             }
-
-            showsMap.get(showKey)?.showtimes.push({
+            showsMerged.get(showKey)?.showtimes.push({
                 dateTime: show.showtime.dateTime,
                 version: show.showtime.version,
                 versionLong: show.showtime.versionLong,
@@ -72,9 +72,7 @@ const app = new Hono()
             });
         }
 
-        const shows = Array.from(showsMap.values());
-
-        return c.json({ shows });
+        return c.json({ shows: Array.from(showsMerged.values()) });
     });
 
 export default app;

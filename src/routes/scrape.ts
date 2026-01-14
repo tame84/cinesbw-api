@@ -5,7 +5,6 @@ import UserAgent from "user-agents";
 import { createUTCDate, createUTCDateTime } from "src/utils/date";
 import { Movie } from "src/utils/types";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
-import { log } from "console";
 
 interface TmdbBFindResponse {
     movie_results: {
@@ -451,11 +450,10 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
 
 const app = new Hono().get("/", async (c) => {
     const startTime = performance.now();
-    const max403Retries = 3;
+    const max403Retries = 2;
 
-    for (let attemp = 1; attemp <= max403Retries; attemp++) {
+    for (let attemp = 0; attemp <= max403Retries; attemp++) {
         try {
-            log(`Scraping attempt ${attemp}...`);
             const moviesTmdbId = await getMoviesTmdbId();
             const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
             const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
@@ -467,21 +465,23 @@ const app = new Hono().get("/", async (c) => {
             const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
 
             return c.json({
-                timeToCompleteMs: Number((performance.now() - startTime).toFixed(0)),
-                scrapedMoviesCount: fetchedMoviesData.length + unfetchedMoviesData.length,
-                insertedMoviesCount,
-                insertedShowsCount,
-                insertedShowtimesCount,
-                removedShowsCount,
-                removedMoviesCount,
+                timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
+                counts: {
+                    scrapedMovies: fetchedMoviesData.length + unfetchedMoviesData.length,
+                    insertedMovies: insertedMoviesCount,
+                    insertedShows: insertedShowsCount,
+                    insertedShowtimes: insertedShowtimesCount,
+                    removedMovies: removedMoviesCount,
+                    removedShows: removedShowsCount,
+                },
             });
         } catch (error) {
             if (error instanceof AxiosError && error.status === 403) {
                 if (attemp < max403Retries) {
-                    console.log(`Access denied (403). Retrying... Attempt ${attemp}/${max403Retries - 1}`);
+                    console.log(`Access denied (403). Retrying... Attempt ${attemp}/${max403Retries}`);
                     continue;
                 } else {
-                    console.log(`Access denied (403). Max retries reached. Aborting.`);
+                    console.log(`Access denied (403). Max retries reached.`);
                     return c.json({ error: "Access denied (403). Max retries reached." }, 403);
                 }
             }
@@ -489,9 +489,6 @@ const app = new Hono().get("/", async (c) => {
             return c.json({ error: "An error occurred during scraping." }, 500);
         }
     }
-    const endTime = performance.now();
-    const elapsedTime = endTime - startTime;
-    console.log(`Scraping completed in ${elapsedTime.toFixed(0)} milliseconds.`);
 });
 
 export default app;

@@ -13,7 +13,7 @@ const app = new Hono()
     .use(logger())
     .route("/scrape", scrapingRoutes)
     .route("/shows", showsRoutes)
-    .route("/movie/:slug", movieRoutes)
+    .route("/movie", movieRoutes)
     .route("/genres", genresRoutes)
     .route("/versions", versionsRoutes)
     .route("/cinemas", cinemasRoutes);
