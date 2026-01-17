@@ -86,11 +86,12 @@ const generateHeaders = () => {
     const majorVersion = versionMatch ? versionMatch[2] : "120";
 
     return {
-        "User-Agent": generateUserAgent(),
+        "User-Agent": ua,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.5",
+        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
         Referer: "https://www.google.com/",
-        "Sec-CH-UA": `"Chromium";v="${majorVersion}", "Not A;Brand";v="24"`,
+        "Sec-CH-UA": `"Chromium";v="${majorVersion}", "Not.A/Brand";v="24"`,
         "Sec-CH-UA-Mobile": "?0",
         "Sec-CH-UA-Platform": '"Windows"',
         "Sec-Fetch-Dest": "document",
@@ -100,6 +101,10 @@ const generateHeaders = () => {
         "Sec-Gpc": "1",
     };
 };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const baseDelayMs = Number(process.env.SCRAPE_DELAY_MS || 1500);
+const jitterDelayMs = Number(process.env.SCRAPE_JITTER_MS || 1500);
 
 const formatDate = (date: Date) => {
     const year = date.getFullYear();
@@ -228,7 +233,7 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
                     dateIterator
                 )}`,
                 {
-                    headers: generateHeaders(),
+                    headers: { ...generateHeaders(), "X-Requested-With": "XMLHttpRequest" },
                 }
             )
             .catch((error) => {
@@ -244,7 +249,7 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
             if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
                 break;
             }
-            await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1000));
+            await sleep(baseDelayMs + Math.random() * jitterDelayMs);
             dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
             continue;
         }
@@ -278,7 +283,7 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
             ),
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1000));
+        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
         dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
     }
 
@@ -485,11 +490,13 @@ const app = new Hono().get(
                     },
                 });
             } catch (error) {
-                if (error instanceof AxiosError && error.status === 403) {
+                if (error instanceof AxiosError && error.response?.status === 403) {
                     if (attempt < max403Retries) {
                         console.log(`Access denied (403). Retrying... Attempt ${attempt}/${max403Retries}`);
+                        await sleep(2000 * attempt);
                         continue;
                     } else {
+                        console.error(error);
                         console.log(`Access denied (403). Max retries reached.`);
                         return c.json({ error: "Access denied (403). Max retries reached." }, 403);
                     }
