@@ -244,7 +244,7 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
             if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
                 break;
             }
-            await new Promise((resolve) => setTimeout(resolve, 750 + Math.random() * 1000));
+            await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1000));
             dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
             continue;
         }
@@ -278,7 +278,7 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
             ),
         });
 
-        await new Promise((resolve) => setTimeout(resolve, 750 + Math.random() * 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1000));
         dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
     }
 
@@ -461,7 +461,7 @@ const app = new Hono().get(
         const startTime = performance.now();
         const max403Retries = 2;
 
-        for (let attemp = 0; attemp <= max403Retries; attemp++) {
+        for (let attempt = 1; attempt <= max403Retries; attempt++) {
             try {
                 const moviesTmdbId = await getMoviesTmdbId();
                 const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
@@ -486,8 +486,8 @@ const app = new Hono().get(
                 });
             } catch (error) {
                 if (error instanceof AxiosError && error.status === 403) {
-                    if (attemp < max403Retries) {
-                        console.log(`Access denied (403). Retrying... Attempt ${attemp}/${max403Retries}`);
+                    if (attempt < max403Retries) {
+                        console.log(`Access denied (403). Retrying... Attempt ${attempt}/${max403Retries}`);
                         continue;
                     } else {
                         console.log(`Access denied (403). Max retries reached.`);
