@@ -1,9 +1,13 @@
-import { drizzle } from "drizzle-orm/neon-http";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import { eq, lt, notExists } from "drizzle-orm";
 import { moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { Movie } from "src/utils/types";
+import ws from "ws";
 
-export const db = drizzle(process.env.NEON_DATABASE_URL!);
+export const db = drizzle({
+    connection: process.env.NEON_DATABASE_URL!,
+    ws: ws,
+});
 
 export const addMoviesToDb = async (movies: Movie[]) => {
     const moviesToInsert = movies.map((m) => ({
