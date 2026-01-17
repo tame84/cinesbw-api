@@ -8,9 +8,10 @@ import movieRoutes from "./routes/movie";
 import genresRoutes from "./routes/genres";
 import versionsRoutes from "./routes/versions";
 import cinemasRoutes from "./routes/cinemas";
+import { customLogger } from "src/utils/logger";
 
 const app = new Hono()
-    .use(logger())
+    .use(logger(customLogger))
     .onError((err, c) => {
         console.error(err);
         return c.text("Internal Server Error", 500);
@@ -28,6 +29,10 @@ serve(
         port: 3000,
     },
     (info) => {
-        console.log(`Server is running on http://localhost:${info.port}`);
+        if (info.address === "::") {
+            console.log(`Server is running on http://localhost:${info.port}`);
+        } else {
+            console.log(`Server is running on https://${info.address}`);
+        }
     }
 );
