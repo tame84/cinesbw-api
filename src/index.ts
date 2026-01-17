@@ -32,7 +32,7 @@ serve(
         if (info.address === "::") {
             console.log(`Server is running on http://localhost:${info.port}`);
         } else {
-            console.log(`Server is running on https://${info.address}`);
+            console.log(`Server is running...`);
         }
     }
 );
