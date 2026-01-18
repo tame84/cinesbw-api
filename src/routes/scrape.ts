@@ -79,27 +79,55 @@ const generateUserAgent = () => {
     return ua.toString();
 };
 
-const generateHeaders = () => {
-    const ua = generateUserAgent();
+// CE CODE FONCTIONNE POTENTILLEMENT EN PROD (ATTENDRE QUELQUES JOURS POUR AVOIR DES RETOURS)
+const USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5; rv:127.0) Gecko/20100101 Firefox/127.0",
+];
 
-    const versionMatch = ua.match(/(Chrome|Chromium)\/(\d+)/i);
-    const majorVersion = versionMatch ? versionMatch[2] : "120";
+const HEADERS_WITHOUT_UA = {
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Brave";v="138"',
+    "sec-fetch-mode": "navigate",
+};
+
+const getRandomUserAgent = () => {
+    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+};
+
+const generateHeaders = () => {
+    const ua = getRandomUserAgent();
 
     return {
         "User-Agent": ua,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        Referer: "https://www.google.com/",
-        "Sec-CH-UA": `"Chromium";v="${majorVersion}", "Not.A/Brand";v="24"`,
-        "Sec-CH-UA-Mobile": "?0",
-        "Sec-CH-UA-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Sec-Gpc": "1",
+        ...HEADERS_WITHOUT_UA,
     };
+
+    // const ua = generateUserAgent();
+
+    // const versionMatch = ua.match(/(Chrome|Chromium)\/(\d+)/i);
+    // const majorVersion = versionMatch ? versionMatch[2] : "120";
+
+    // return {
+    //     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    //     "Accept-Encoding": "gzip, deflate, br",
+    //     "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+    //     "Sec-Fetch-Dest": "document",
+    //     "Sec-Fetch-Mode": "navigate",
+    //     "Sec-Fetch-Site": "none",
+    //     "Sec-CH-UA": `"Chromium";v="${majorVersion}", "Not.A/Brand";v="24"`,
+    //     "Sec-CH-UA-Mobile": "?0",
+    //     "Sec-CH-UA-Platform": '"Windows"',
+    //     "Sec-Fetch-User": "?1",
+    //     "Sec-Gpc": "1",
+    //     "Upgrade-Insecure-Requests": "1",
+    //     "User-Agent": ua,
+    //     Referer: "https://www.google.com/",
+    // };
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -134,7 +162,7 @@ const getMoviesTmdbId = async () => {
             `${CINENEWS_BASE_URL}/fr/cinema/programme/region/brabant-wallon?startrow=${startrow}`,
             {
                 headers: generateHeaders(),
-            }
+            },
         );
         if (response.status !== 200) {
             throw new Error(`Failed to fetch movies: ${response.status}`);
@@ -178,7 +206,7 @@ const getMoviesTmdbId = async () => {
                     pageUrl,
                     $,
                 };
-            })
+            }),
         )
     ).filter((page) => page !== null);
 
@@ -215,7 +243,7 @@ const getMoviesTmdbId = async () => {
                     tmdbId: data.movie_results[0].id,
                     cinenewsId,
                 };
-            })
+            }),
         )
     ).filter((details) => details !== null);
 
@@ -230,11 +258,11 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
         const showtimesResponse = await axios
             .get(
                 `${CINENEWS_BASE_URL}/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${cinenewsId}&v3&regionId=3&selDate=${formatDate(
-                    dateIterator
+                    dateIterator,
                 )}`,
                 {
                     headers: { ...generateHeaders(), "X-Requested-With": "XMLHttpRequest" },
-                }
+                },
             )
             .catch((error) => {
                 console.log(`Failed to fetch showtimes for movie ID ${cinenewsId} on ${formatDate(dateIterator)}`);
@@ -279,7 +307,7 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
                             };
                         }),
                     };
-                })
+                }),
             ),
         });
 
@@ -325,7 +353,7 @@ const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise
                 const [year, month, day] = releaseDateStr.split("-").map(Number);
                 const releaseDate = createUTCDate(day, month, year);
                 const runtime = Number(
-                    $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim()
+                    $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim(),
                 );
                 const genres = $detailsHeader
                     .find(".detail-header-more b:contains('Genre :') ~ a.c")
@@ -371,7 +399,7 @@ const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise
                     },
                     shows,
                 };
-            })
+            }),
         )
     ).filter((movie) => movie !== null);
 
@@ -395,7 +423,7 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
                                 Accept: "application/json",
                                 Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
                             },
-                        }
+                        },
                     )
                     .catch((error) => {
                         console.log(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
@@ -421,7 +449,7 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
                             .filter(
                                 (member) =>
                                     member.department.toLowerCase() === "directing" &&
-                                    member.job.toLowerCase() === "director"
+                                    member.job.toLowerCase() === "director",
                             )
                             .map((director) => director.name),
                         actors: data.credits.cast.map((actor) => actor.name).slice(0, 5),
@@ -442,13 +470,13 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
                                     video.type.toLowerCase() === "trailer" && {
                                         name: video.name,
                                         key: video.key,
-                                    }
+                                    },
                             )
                             .filter((video) => video !== false),
                     },
                     shows,
                 };
-            })
+            }),
         )
     ).filter((movie) => movie !== null);
 
@@ -505,7 +533,7 @@ const app = new Hono().get(
                 return c.json({ error: "An error occurred during scraping." }, 500);
             }
         }
-    }
+    },
 );
 
 export default app;
