@@ -67,7 +67,7 @@ enum CinemaEnum {
 enum VersionEnum {
     VO = "VO",
     VF = "VF",
-    NV = "NV",
+    VN = "VN",
 }
 
 const schema = v.object({
@@ -79,10 +79,10 @@ const schema = v.object({
                 str
                     .split(",")
                     .map((id) => Number(id.trim()))
-                    .filter(Boolean)
+                    .filter(Boolean),
             ),
-            v.array(v.enum(CinemaEnum))
-        )
+            v.array(v.enum(CinemaEnum)),
+        ),
     ),
     versions: v.optional(
         v.pipe(
@@ -91,10 +91,10 @@ const schema = v.object({
                 str
                     .split(",")
                     .map((s) => s.toUpperCase().trim())
-                    .filter(Boolean)
+                    .filter(Boolean),
             ),
-            v.array(v.enum(VersionEnum))
-        )
+            v.array(v.enum(VersionEnum)),
+        ),
     ),
     genres: v.optional(
         v.pipe(
@@ -103,102 +103,107 @@ const schema = v.object({
                 str
                     .split(",")
                     .map((s) => s.trim())
-                    .filter(Boolean)
+                    .filter(Boolean),
             ),
-            v.array(v.string())
-        )
+            v.array(v.string()),
+        ),
     ),
 });
 
-const app = new Hono().get(
-    "/",
-    vValidator("query", schema, (result, c) => {
-        if (!result.success) {
-            return c.json({ error: "Invalid query parameters" }, 400);
-        }
-    }),
-    async (c) => {
-        const { date, cinemas, versions, genres } = c.req.valid("query");
-
-        const today = new Date();
-        const todayUTC = createUTCDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
-        let dateFilter = todayUTC;
-        if (date) {
-            const [year, months, days] = date.split("-").map(Number);
-            const dateUTC = createUTCDate(days, months, year);
-            if (!isNaN(dateUTC.getTime())) {
-                dateFilter = dateUTC;
+const app = new Hono()
+    .get(
+        "/",
+        vValidator("query", schema, (result, c) => {
+            if (!result.success) {
+                return c.json({ error: "Invalid query parameters" }, 400);
             }
-        }
+        }),
+        async (c) => {
+            const { date, cinemas, versions, genres } = c.req.valid("query");
 
-        if (dateFilter.getTime() < todayUTC.getTime()) {
-            return c.json({ error: "Date must be today or in the future" }, 400);
-        }
+            const today = new Date();
+            const todayUTC = createUTCDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
+            let dateFilter = todayUTC;
+            if (date) {
+                const [year, months, days] = date.split("-").map(Number);
+                const dateUTC = createUTCDate(days, months, year);
+                if (!isNaN(dateUTC.getTime())) {
+                    dateFilter = dateUTC;
+                }
+            }
 
-        const cinemasFilter = cinemas || null;
-        const versionsFilter = versions || null;
-        const genresFilter = genres || null;
+            if (dateFilter.getTime() < todayUTC.getTime()) {
+                return c.json({ error: "Date must be today or in the future" }, 400);
+            }
 
-        const showtimesFilters = [
-            cinemasFilter ? inArray(showtimesTable.cinemaId, cinemasFilter) : undefined,
-            versionsFilter ? or(...versionsFilter.map((v) => like(showtimesTable.version, `${v}%`))) : undefined,
-        ].filter(Boolean);
-        const moviesFilters = [genresFilter ? arrayOverlaps(moviesTable.genres, genresFilter) : undefined].filter(
-            Boolean
-        );
+            const cinemasFilter = cinemas || null;
+            const versionsFilter = versions || null;
+            const genresFilter = genres || null;
 
-        const todaySelectedShows = (await db
-            .select({
-                show: {
-                    uuid: showsTable.uuid,
-                    movieUuid: showsTable.movieUuid,
-                },
-                showtime: {
-                    dateTime: showtimesTable.dateTime,
-                    version: showtimesTable.version,
-                    versionLong: showtimesTable.versionLong,
-                },
-                movie: {
-                    slug: moviesTable.slug,
-                    title: moviesTable.title,
-                    runtime: moviesTable.runtime,
-                    genres: moviesTable.genres,
-                    poster: moviesTable.poster,
-                },
-                cinema: {
-                    name: cinemasTable.name,
-                    website: cinemasTable.website,
-                },
-            })
-            .from(showsTable)
-            .where(eq(showsTable.date, dateFilter))
-            .innerJoin(showtimesTable, and(eq(showsTable.uuid, showtimesTable.showUuid), ...showtimesFilters))
-            .innerJoin(moviesTable, and(eq(showsTable.movieUuid, moviesTable.uuid), ...moviesFilters))
-            .innerJoin(cinemasTable, eq(showtimesTable.cinemaId, cinemasTable.id))
-            .orderBy(moviesTable.slug, showtimesTable.dateTime)) as DBShow[];
+            const showtimesFilters = [
+                cinemasFilter ? inArray(showtimesTable.cinemaId, cinemasFilter) : undefined,
+                versionsFilter ? or(...versionsFilter.map((v) => like(showtimesTable.version, `${v}%`))) : undefined,
+            ].filter(Boolean);
+            const moviesFilters = [genresFilter ? arrayOverlaps(moviesTable.genres, genresFilter) : undefined].filter(
+                Boolean,
+            );
 
-        const showsMap = new Map<string, TodayShow>();
-        for (const show of todaySelectedShows) {
-            const showKey = `${show.show.uuid}-${show.show.movieUuid}`;
-            if (!showsMap.has(showKey)) {
-                showsMap.set(showKey, {
-                    ...show.movie,
-                    showtimes: [],
+            const todaySelectedShows = (await db
+                .select({
+                    show: {
+                        uuid: showsTable.uuid,
+                        movieUuid: showsTable.movieUuid,
+                    },
+                    showtime: {
+                        dateTime: showtimesTable.dateTime,
+                        version: showtimesTable.version,
+                        versionLong: showtimesTable.versionLong,
+                    },
+                    movie: {
+                        slug: moviesTable.slug,
+                        title: moviesTable.title,
+                        runtime: moviesTable.runtime,
+                        genres: moviesTable.genres,
+                        poster: moviesTable.poster,
+                    },
+                    cinema: {
+                        name: cinemasTable.name,
+                        website: cinemasTable.website,
+                    },
+                })
+                .from(showsTable)
+                .where(eq(showsTable.date, dateFilter))
+                .innerJoin(showtimesTable, and(eq(showsTable.uuid, showtimesTable.showUuid), ...showtimesFilters))
+                .innerJoin(moviesTable, and(eq(showsTable.movieUuid, moviesTable.uuid), ...moviesFilters))
+                .innerJoin(cinemasTable, eq(showtimesTable.cinemaId, cinemasTable.id))
+                .orderBy(moviesTable.slug, showtimesTable.dateTime)) as DBShow[];
+
+            const showsMap = new Map<string, TodayShow>();
+            for (const show of todaySelectedShows) {
+                const showKey = `${show.show.uuid}-${show.show.movieUuid}`;
+                if (!showsMap.has(showKey)) {
+                    showsMap.set(showKey, {
+                        ...show.movie,
+                        showtimes: [],
+                    });
+                }
+
+                showsMap.get(showKey)?.showtimes.push({
+                    dateTime: show.showtime.dateTime,
+                    version: show.showtime.version,
+                    versionLong: show.showtime.versionLong,
+                    cinema: { ...show.cinema },
                 });
             }
 
-            showsMap.get(showKey)?.showtimes.push({
-                dateTime: show.showtime.dateTime,
-                version: show.showtime.version,
-                versionLong: show.showtime.versionLong,
-                cinema: { ...show.cinema },
-            });
-        }
+            const todayShows = Array.from(showsMap.values());
 
-        const todayShows = Array.from(showsMap.values());
-
-        return c.json({ showsCount: todayShows.length, shows: todayShows });
-    }
-);
+            return c.json({ showsCount: todayShows.length, shows: todayShows });
+        },
+    )
+    .get("/dates", async (c) => {
+        const dates = await db.selectDistinct({ date: showsTable.date }).from(showsTable);
+        return c.json(Array.from(dates.flatMap((d) => d.date)));
+    });
 
 export default app;
