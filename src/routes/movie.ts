@@ -24,7 +24,7 @@ const app = new Hono()
             })
             .from(moviesTable)
             .where(eq(moviesTable.slug, slug));
-        return c.json({ movie: movie[0] });
+        return c.json(movie[0]);
     })
     .get("/shows", async (c) => {
         const slug = c.req.param("slug");

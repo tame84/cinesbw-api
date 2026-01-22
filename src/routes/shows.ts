@@ -203,7 +203,7 @@ const app = new Hono()
     )
     .get("/dates", async (c) => {
         const dates = await db.selectDistinct({ date: showsTable.date }).from(showsTable);
-        return c.json(Array.from(dates.flatMap((d) => d.date)));
+        return c.json(Array.from(dates.flatMap((d) => d.date)).sort((a, b) => a.getTime() - b.getTime()));
     });
 
 export default app;
