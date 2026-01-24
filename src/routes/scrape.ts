@@ -7,6 +7,7 @@ import { Movie } from "src/utils/types";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
 import { vValidator } from "@hono/valibot-validator";
 import * as v from "valibot";
+import { capitalize } from "../utils/string";
 
 interface TmdbBFindResponse {
     movie_results: {
@@ -52,6 +53,7 @@ interface TmdbMovieDetailsResponse {
     release_date: string;
     runtime: number;
     title: string;
+    original_language: string;
     credits: {
         cast: {
             name: string;
@@ -151,6 +153,11 @@ const slugifyTitle = (title: string, cinenewsId: string) => {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/-+/g, "-")
         .replace(/^-+|-+$/g, "");
+};
+
+const displayNameFr = new Intl.DisplayNames(["fr"], { type: "language" });
+const languageCodeToFrenchName = (code: string) => {
+    return capitalize(displayNameFr.of(code) || code);
 };
 
 const getMoviesTmdbId = async () => {
@@ -382,6 +389,7 @@ const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise
                         releaseDate,
                         runtime,
                         genres,
+                        originalLanguage: null,
                         directors,
                         actors,
                         overview,
@@ -445,6 +453,7 @@ const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]
                         releaseDate: releaseDate,
                         runtime: data.runtime,
                         genres: data.genres.map((genre) => genre.name),
+                        originalLanguage: languageCodeToFrenchName(data.original_language),
                         directors: data.credits.crew
                             .filter(
                                 (member) =>

@@ -18,6 +18,7 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         releaseDate: m.movie.releaseDate && !isNaN(m.movie.releaseDate.getTime()) ? m.movie.releaseDate : null,
         runtime: m.movie.runtime,
         genres: m.movie.genres,
+        originalLanguage: m.movie.originalLanguage,
         directors: m.movie.directors,
         actors: m.movie.actors,
         overview: m.movie.overview,
@@ -44,7 +45,7 @@ export const addMoviesToDb = async (movies: Movie[]) => {
                         date: show.date,
                         movieUuid: movie.uuid,
                         movieSlug: movie.slug,
-                    }))
+                    })),
                 );
             }
         }
@@ -65,7 +66,7 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         const allShowtimesToInsert = [];
         for (const show of insertedShows) {
             const movieSlug = allShowsToInsert.find(
-                (s) => s.movieUuid === show.movieUuid && s.date.getTime() === show.date.getTime()
+                (s) => s.movieUuid === show.movieUuid && s.date.getTime() === show.date.getTime(),
             )?.movieSlug;
             const existingMovie = movies.find((m) => m.movie.slug === movieSlug);
             const existingShow = existingMovie?.shows.find((s) => s.date.getTime() === show.date.getTime());
@@ -80,8 +81,8 @@ export const addMoviesToDb = async (movies: Movie[]) => {
                             versionLong: t.version.long,
                             showUuid: show.uuid,
                             cinemaId: c.cinema.yellowId,
-                        }))
-                    )
+                        })),
+                    ),
                 );
             }
         }

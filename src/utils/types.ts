@@ -24,6 +24,7 @@ export interface Movie {
         releaseDate: Date;
         runtime: number;
         genres: string[];
+        originalLanguage: string | null;
         directors: string[];
         actors: string[];
         overview: string;
