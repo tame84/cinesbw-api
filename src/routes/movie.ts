@@ -15,6 +15,7 @@ const app = new Hono()
                 releaseDate: moviesTable.releaseDate,
                 runtime: moviesTable.runtime,
                 genres: moviesTable.genres,
+                originalLanguage: moviesTable.originalLanguage,
                 directors: moviesTable.directors,
                 actors: moviesTable.actors,
                 overview: moviesTable.overview,
