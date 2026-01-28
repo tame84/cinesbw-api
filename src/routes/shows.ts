@@ -122,8 +122,9 @@ const app = new Hono()
             const { date, cinemas, versions, genres } = c.req.valid("query");
 
             const today = new Date();
+            const todayUTC = createUTCDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
             const yesterdayUTC = createUTCDate(today.getDate() - 1, today.getMonth() + 1, today.getFullYear());
-            let dateFilter = yesterdayUTC;
+            let dateFilter = todayUTC;
             if (date) {
                 const [year, months, days] = date.split("-").map(Number);
                 const dateUTC = createUTCDate(days, months, year);
