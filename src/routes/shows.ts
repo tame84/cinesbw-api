@@ -122,8 +122,8 @@ const app = new Hono()
             const { date, cinemas, versions, genres } = c.req.valid("query");
 
             const today = new Date();
-            const todayUTC = createUTCDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
-            let dateFilter = todayUTC;
+            const yesterdayUTC = createUTCDate(today.getDate() - 1, today.getMonth() + 1, today.getFullYear());
+            let dateFilter = yesterdayUTC;
             if (date) {
                 const [year, months, days] = date.split("-").map(Number);
                 const dateUTC = createUTCDate(days, months, year);
@@ -132,7 +132,7 @@ const app = new Hono()
                 }
             }
 
-            if (dateFilter.getTime() < todayUTC.getTime()) {
+            if (dateFilter.getTime() < yesterdayUTC.getTime()) {
                 return c.json({ error: "Date must be today or in the future" }, 400);
             }
 
