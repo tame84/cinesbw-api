@@ -100,7 +100,10 @@ const app = new Hono()
                 });
             }
 
-            return c.json(Array.from(showsMerged.values())[0]);
+            const showtimes = Array.from(showsMerged.values());
+            if (showtimes.length === 0) return c.json({ error: "No shows found for the specified date" }, 404);
+
+            return c.json(showtimes[0]);
         },
     );
 
