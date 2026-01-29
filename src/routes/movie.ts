@@ -100,7 +100,7 @@ const app = new Hono()
                 });
             }
 
-            return c.json({ shows: Array.from(showsMerged.values()) });
+            return c.json(Array.from(showsMerged.values()));
         },
     );
 
