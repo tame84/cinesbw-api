@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { db } from "src/db";
 import { cinemasTable, moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { createUTCDate } from "src/utils/date";
+import { CinemaEnum, VersionEnum } from "src/utils/types";
 import * as v from "valibot";
 
 interface DBShow {
@@ -53,21 +54,6 @@ interface TodayShow {
             website: string;
         };
     }[];
-}
-
-enum CinemaEnum {
-    CINES_WELLINGTON = 60,
-    CINEMA_ETOILE = 3946,
-    CINE_CENTRE = 209,
-    CINE4 = 62932,
-    KINEPOLIS_IMAGIBRAINE = 57,
-    PATHE_LOUVAIN_LA_NEUVE = 12383,
-}
-
-enum VersionEnum {
-    VO = "VO",
-    VF = "VF",
-    VN = "VN",
 }
 
 const schema = v.object({

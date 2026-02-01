@@ -44,3 +44,18 @@ export interface Movie {
     };
     shows: Show[];
 }
+
+export enum CinemaEnum {
+    CINES_WELLINGTON = 60,
+    CINEMA_ETOILE = 3946,
+    CINE_CENTRE = 209,
+    CINE4 = 62932,
+    KINEPOLIS_IMAGIBRAINE = 57,
+    PATHE_LOUVAIN_LA_NEUVE = 12383,
+}
+
+export enum VersionEnum {
+    VO = "VO",
+    VF = "VF",
+    VN = "VN",
+}

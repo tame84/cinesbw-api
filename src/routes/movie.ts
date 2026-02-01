@@ -1,9 +1,10 @@
 import { vValidator } from "@hono/valibot-validator";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, like, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "src/db";
 import { cinemasTable, moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { createUTCDate } from "src/utils/date";
+import { CinemaEnum, VersionEnum } from "src/utils/types";
 import * as v from "valibot";
 
 const app = new Hono()
@@ -32,13 +33,43 @@ const app = new Hono()
     })
     .get(
         "/shows",
-        vValidator("query", v.object({ date: v.optional(v.string()) }), (result, c) => {
-            if (!result.success) {
-                return c.json({ error: "Invalid query parameters" }, 400);
-            }
-        }),
+        vValidator(
+            "query",
+            v.object({
+                date: v.optional(v.string()),
+                cinemas: v.optional(
+                    v.pipe(
+                        v.string(),
+                        v.transform((str) =>
+                            str
+                                .split(",")
+                                .map((id) => Number(id.trim()))
+                                .filter(Boolean),
+                        ),
+                        v.array(v.enum(CinemaEnum)),
+                    ),
+                ),
+                versions: v.optional(
+                    v.pipe(
+                        v.string(),
+                        v.transform((str) =>
+                            str
+                                .split(",")
+                                .map((s) => s.toUpperCase().trim())
+                                .filter(Boolean),
+                        ),
+                        v.array(v.enum(VersionEnum)),
+                    ),
+                ),
+            }),
+            (result, c) => {
+                if (!result.success) {
+                    return c.json({ error: "Invalid query parameters" }, 400);
+                }
+            },
+        ),
         async (c) => {
-            const { date } = c.req.valid("query");
+            const { date, cinemas, versions } = c.req.valid("query");
             const slug = c.req.param("slug");
 
             const today = new Date();
@@ -56,6 +87,14 @@ const app = new Hono()
             if (dateFilter.getTime() < yesterdayUTC.getTime()) {
                 return c.json({ error: "Date must be today or in the future" }, 400);
             }
+
+            const cinemasFilter = cinemas || null;
+            const versionsFilter = versions || null;
+
+            const showtimesFilters = [
+                cinemasFilter ? inArray(showtimesTable.cinemaId, cinemasFilter) : undefined,
+                versionsFilter ? or(...versionsFilter.map((v) => like(showtimesTable.version, `${v}%`))) : undefined,
+            ].filter(Boolean);
 
             const shows = await db
                 .select({
@@ -79,7 +118,7 @@ const app = new Hono()
                 .from(moviesTable)
                 .where(eq(moviesTable.slug, slug))
                 .innerJoin(showsTable, and(eq(showsTable.movieUuid, moviesTable.uuid), eq(showsTable.date, dateFilter)))
-                .innerJoin(showtimesTable, eq(showtimesTable.showUuid, showsTable.uuid))
+                .innerJoin(showtimesTable, and(eq(showtimesTable.showUuid, showsTable.uuid), ...showtimesFilters))
                 .innerJoin(cinemasTable, eq(showtimesTable.cinemaId, cinemasTable.id))
                 .orderBy(showtimesTable.dateTime);
 
