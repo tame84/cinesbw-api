@@ -34,5 +34,5 @@ serve(
         } else {
             console.log(`Server is running...`);
         }
-    }
+    },
 );

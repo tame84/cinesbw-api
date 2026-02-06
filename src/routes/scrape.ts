@@ -244,6 +244,11 @@ const getMoviesTmdbId = async () => {
                 }
                 const data: TmdbBFindResponse = response.data;
 
+                if (data.movie_results.length === 0) {
+                    unfetchedMovies.push({ url: page.pageUrl, imdbId: null, cinenewsId: cinenewsId || null });
+                    return null;
+                }
+
                 return {
                     url: page.pageUrl,
                     imdbId,
