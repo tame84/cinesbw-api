@@ -1,0 +1,33 @@
+name: build and deploy to o2switch FTP server
+
+on:
+    push:
+        branches: ["main"]
+
+jobs:
+    build-and-deploy:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: checkout code
+              uses: actions/checkout@v6
+
+            - name: setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "18"
+
+            - name: install dependencies
+              run: npm install
+
+            - name: build project
+              run: npm run build
+
+            - name: deploy to FTP server
+              uses: SamKirkland/FTP-Deploy-Action@v4
+              with:
+                  server: ${{ secrets.FTP_HOST }}
+                  username: ${{ secrets.FTP_USERNAME }}
+                  password: ${{ secrets.FTP_PASSWORD }}
+                  local-dir: ./dist
+                  server-dir: /cinesbw-api/src/
