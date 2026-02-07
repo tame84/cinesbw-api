@@ -1,4 +1,4 @@
-name: build and deploy to o2switch FTP server
+name: build and deploy to o2switch with SSH
 
 on:
     push:
@@ -15,7 +15,7 @@ jobs:
             - name: setup Node.js
               uses: actions/setup-node@v6
               with:
-                  node-version: "18"
+                  node-version: "20"
 
             - name: install dependencies
               run: npm install
@@ -23,11 +23,44 @@ jobs:
             - name: build project
               run: npm run build
 
-            - name: deploy to FTP server
-              uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-              with:
-                  server: ${{ secrets.FTP_HOST }}
-                  username: ${{ secrets.FTP_USERNAME }}
-                  password: ${{ secrets.FTP_PASSWORD }}
-                  local-dir: ./dist/
-                  server-dir: /cinesbw-api/src/
+            - name: get runner's public IP
+              id: ip
+              uses: haythem/public-ip@v1.3
+
+            - name: whitelisting the runner IP
+              run: |
+                  curl -sm 45 -H "Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_API_TOKEN }}" \
+                  "https://${{ secrets.CPANEL_SERVER }}:2083/execute/SshWhitelist/add?address=${{ steps.ip.outputs.ipv4 }}&port=22"
+
+            - name: making sure the IP is whitelisted
+              run: |
+                  curl -sm 45 -H'Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_API_TOKEN }}' \
+                  'https://${{ secrets.CPANEL_SERVER }}:2083/execute/SshWhitelist/list' | grep ${{ steps.ip.outputs.ipv4 }}
+
+            - name: install SSH key
+              run: |
+                  eval $(ssh-agent -s)
+                  mkdir -p ~/.ssh
+                  echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+                  chmod 600 ~/.ssh/id_rsa
+
+            - name: deploy via SSH
+              run: |
+                  rsync -av --delete -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa" \
+                  ./build/ ${{ secrets.SSH_USERNAME }}@${{ secrets.CPANEL_SERVER }}:/home/${{ secrets.SSH_USERNAME }}/cinesbw-api/src
+
+            - name: restart app
+              run: |
+                  ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa \
+                  ${{ secrets.SSH_USERNAME }}@${{ secrets.CPANEL_SERVER }} "cd /home/${{ secrets.SSH_USERNAME }}/cinesbw-api && mkdir -p tmp && touch tmp/restart.txt"
+
+            - name: remove runner IP from whitelist
+              if: always()
+              run: |
+                  curl -sm 45 \
+                  -H "Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_API_TOKEN }}" \
+                  "https://${{ secrets.CPANEL_SERVER }}:2083/execute/SshWhitelist/remove?address=${{ steps.ip.outputs.ipv4 }}"
+
+            - name: cleaning SSH keys
+              if: always()
+              run: rm -fr ~/.ssh
