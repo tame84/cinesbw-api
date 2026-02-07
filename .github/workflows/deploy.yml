@@ -43,10 +43,15 @@ jobs:
 
             - name: install SSH key
               run: |
-                  eval $(ssh-agent -s)
                   mkdir -p ~/.ssh
                   echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+                  echo "" >> ~/.ssh/id_rsa
                   chmod 600 ~/.ssh/id_rsa
+
+            - name: test ssh auth
+              run: |
+                  ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+                  ${{ secrets.SSH_USERNAME }}@${{ secrets.CPANEL_SERVER }} "echo OK"
 
             - name: deploy via SSH
               run: |
