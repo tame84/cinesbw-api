@@ -27,6 +27,10 @@ jobs:
               id: ip
               uses: haythem/public-ip@v1.3
 
+            - name: test cpanel api connectivity
+              run: |
+                  curl -v --connect-timeout 10 https://${{ secrets.CPANEL_SERVER }}:2083 || true
+
             - name: whitelisting the runner IP
               run: |
                   curl -sm 45 -H "Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_API_TOKEN }}" \
