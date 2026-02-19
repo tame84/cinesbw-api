@@ -1,9 +1,14 @@
-import { date, integer, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { date, integer, jsonb, pgTable, serial, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const cinemasTable = pgTable("cinemas", {
     id: integer("id").primaryKey(),
     name: text("name").notNull(),
     website: text("website").notNull(),
+});
+
+export const genresTable = pgTable("genres", {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull().unique(),
 });
 
 export const moviesTable = pgTable("movies", {
@@ -14,14 +19,18 @@ export const moviesTable = pgTable("movies", {
     title: text("title").notNull(),
     releaseDate: date("release_date", { mode: "date" }),
     runtime: integer("runtime"),
-    genres: text("genres").array(),
     originalLanguage: text("original_language"),
     directors: text("directors").array(),
     actors: text("actors").array(),
     overview: text("overview"),
     backdrop: jsonb("backdrop"),
-    poster: jsonb("poster"),
-    videos: jsonb("videos").array(),
+    poster: jsonb("poster").$type<{ small: string; medium: string; large: string }>(),
+    videos: jsonb("videos").$type<{ name: string; key: string }>().array(),
+});
+
+export const moviesGenresTable = pgTable("movies_genres", {
+    movieUuid: uuid("movie_uuid").references(() => moviesTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
+    genreId: integer("genre_id").references(() => genresTable.id, { onDelete: "cascade", onUpdate: "cascade" }),
 });
 
 export const showsTable = pgTable(

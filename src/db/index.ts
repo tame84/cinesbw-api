@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-serverless";
-import { eq, lt, notExists } from "drizzle-orm";
-import { moviesTable, showsTable, showtimesTable } from "src/db/schema";
+import { eq, inArray, lt, notExists } from "drizzle-orm";
+import { genresTable, moviesGenresTable, moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { Movie } from "src/utils/types";
 import ws from "ws";
 
@@ -9,7 +9,19 @@ export const db = drizzle({
     ws: ws,
 });
 
+const genresNameToId = async (genres: string[]) => {
+    const genresToInsert = genres.map((name) => ({ name }));
+
+    await db.insert(genresTable).values(genresToInsert).onConflictDoNothing({ target: genresTable.name });
+
+    const allGenres = await db.select().from(genresTable).where(inArray(genresTable.name, genres));
+    return new Map<string, number>(allGenres.map((g) => [g.name, g.id]));
+};
+
 export const addMoviesToDb = async (movies: Movie[]) => {
+    const genres = Array.from(new Set(movies.map((m) => m.movie.genres).flat()));
+    const genresMap = await genresNameToId(genres);
+
     const moviesToInsert = movies.map((m) => ({
         imdbId: m.movie.imdbId,
         tmdbId: m.movie.tmdbId,
@@ -17,7 +29,6 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         title: m.movie.title,
         releaseDate: m.movie.releaseDate && !isNaN(m.movie.releaseDate.getTime()) ? m.movie.releaseDate : null,
         runtime: m.movie.runtime,
-        genres: m.movie.genres,
         originalLanguage: m.movie.originalLanguage,
         directors: m.movie.directors,
         actors: m.movie.actors,
@@ -38,6 +49,16 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         const allShowsToInsert: Array<{ date: Date; movieUuid: string; movieSlug: string }> = [];
         for (const movie of insertedMovies) {
             const existingMovie = movies.find((m) => m.movie.slug === movie.slug);
+
+            const genresToInsert = existingMovie?.movie.genres.map((genre) => ({
+                movieUuid: movie.uuid,
+                genreId: genresMap.get(genre)!,
+            }));
+
+            if (genresToInsert && genresToInsert.length > 0) {
+                await tx.insert(moviesGenresTable).values(genresToInsert);
+            }
+
             const shows = existingMovie?.shows;
             if (shows && shows.length > 0) {
                 allShowsToInsert.push(
