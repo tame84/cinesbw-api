@@ -18,7 +18,7 @@ export const moviesTable = pgTable("movies", {
     slug: text("slug").notNull().unique(),
     title: text("title").notNull(),
     releaseDate: date("release_date", { mode: "date" }),
-    runtime: integer("runtime"),
+    runtime: integer("runtime").notNull().default(0),
     originalLanguage: text("original_language"),
     directors: text("directors").array(),
     actors: text("actors").array(),
