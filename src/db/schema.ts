@@ -28,10 +28,14 @@ export const moviesTable = pgTable("movies", {
     videos: jsonb("videos").$type<{ name: string; key: string }>().array(),
 });
 
-export const moviesGenresTable = pgTable("movies_genres", {
-    movieUuid: uuid("movie_uuid").references(() => moviesTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
-    genreId: integer("genre_id").references(() => genresTable.id, { onDelete: "cascade", onUpdate: "cascade" }),
-});
+export const moviesGenresTable = pgTable(
+    "movies_genres",
+    {
+        movieUuid: uuid("movie_uuid").references(() => moviesTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
+        genreId: integer("genre_id").references(() => genresTable.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    },
+    (t) => [unique().on(t.movieUuid, t.genreId)],
+);
 
 export const showsTable = pgTable(
     "shows",
