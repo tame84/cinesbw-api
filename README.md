@@ -1,8 +1,1 @@
-```
-npm install
-npm run dev
-```
-
-```
-open http://localhost:3000
-```
+Hono API to scrape all cinemas showtimes in Walloon Brabant.
