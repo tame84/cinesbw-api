@@ -54,9 +54,8 @@ export const addMoviesToDb = async (movies: Movie[]) => {
                 movieUuid: movie.uuid,
                 genreId: genresMap.get(genre)!,
             }));
-
             if (genresToInsert && genresToInsert.length > 0) {
-                await tx.insert(moviesGenresTable).values(genresToInsert);
+                await tx.insert(moviesGenresTable).values(genresToInsert).onConflictDoNothing();
             }
 
             const shows = existingMovie?.shows;

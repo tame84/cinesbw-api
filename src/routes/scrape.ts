@@ -1,7 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
-import UserAgent from "user-agents";
 import { createUTCDate, createUTCDateTime } from "src/utils/date";
 import { Movie } from "src/utils/types";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
@@ -102,28 +101,6 @@ const generateHeaders = () => {
         "User-Agent": ua,
         ...HEADERS_WITHOUT_UA,
     };
-
-    // const ua = generateUserAgent();
-
-    // const versionMatch = ua.match(/(Chrome|Chromium)\/(\d+)/i);
-    // const majorVersion = versionMatch ? versionMatch[2] : "120";
-
-    // return {
-    //     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    //     "Accept-Encoding": "gzip, deflate, br",
-    //     "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-    //     "Sec-Fetch-Dest": "document",
-    //     "Sec-Fetch-Mode": "navigate",
-    //     "Sec-Fetch-Site": "none",
-    //     "Sec-CH-UA": `"Chromium";v="${majorVersion}", "Not.A/Brand";v="24"`,
-    //     "Sec-CH-UA-Mobile": "?0",
-    //     "Sec-CH-UA-Platform": '"Windows"',
-    //     "Sec-Fetch-User": "?1",
-    //     "Sec-Gpc": "1",
-    //     "Upgrade-Insecure-Requests": "1",
-    //     "User-Agent": ua,
-    //     Referer: "https://www.google.com/",
-    // };
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -182,34 +159,37 @@ const getMoviesTmdbId = async () => {
 
         newMovies.forEach((href) => movies.add(href));
         startrow += 24;
+        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
     }
 
     const unfetchedMovies: UnfetchedMovie[] = [];
-    const moviesPage = (
-        await Promise.all(
-            Array.from(movies).map(async (movieHref) => {
-                const pageUrl = `${CINENEWS_BASE_URL}${movieHref}`;
-                const response = await axios
-                    .get(pageUrl, {
-                        headers: generateHeaders(),
-                    })
-                    .catch((error) => {
-                        console.log(`Failed to fetch movie page at ${pageUrl}`);
-                        throw error;
-                    });
-                if (response.status !== 200) {
-                    unfetchedMovies.push({ url: pageUrl, imdbId: null, cinenewsId: null });
-                    return null;
-                }
+    const moviesPage: { pageUrl: string; $: cheerio.CheerioAPI }[] = [];
+
+    for (const movieHref of movies) {
+        const pageUrl = `${CINENEWS_BASE_URL}${movieHref}`;
+
+        try {
+            const response = await axios.get(pageUrl, {
+                headers: generateHeaders(),
+            });
+
+            if (response.status !== 200) {
+                unfetchedMovies.push({ url: pageUrl, imdbId: null, cinenewsId: null });
+            } else {
                 const data = response.data;
                 const $ = cheerio.load(data);
-                return {
+                moviesPage.push({
                     pageUrl,
                     $,
-                };
-            }),
-        )
-    ).filter((page) => page !== null);
+                });
+            }
+        } catch (error) {
+            console.log(`Failed to fetch movie page at ${pageUrl}`);
+            throw error;
+        }
+
+        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
+    }
 
     const fetchedMovies: FetchedMovie[] = (
         await Promise.all(
@@ -283,7 +263,6 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
             if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
                 break;
             }
-            await sleep(baseDelayMs + Math.random() * jitterDelayMs);
             dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
             continue;
         }
@@ -325,168 +304,161 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
 };
 
 const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise<Movie[]> => {
-    const movies = (
-        await Promise.all(
-            unfetchedMovies.map(async (movie) => {
-                if (!movie.cinenewsId) {
-                    return null;
-                }
-                const shows = await getMoviesShowtimes(movie.cinenewsId);
-                if (!shows) {
-                    return null;
-                }
+    const movies: Movie[] = [];
 
-                const response = await axios
-                    .get(movie.url, {
-                        headers: generateHeaders(),
-                    })
-                    .catch((error) => {
-                        console.log(`Failed to fetch movie page at ${movie.url}`);
-                        throw error;
-                    });
-                if (response.status !== 200) {
-                    return null;
-                }
-                const data = response.data;
-                const $ = cheerio.load(data);
+    for (const movie of unfetchedMovies) {
+        if (!movie.cinenewsId) {
+            continue;
+        }
 
-                const $detailsHeader = $(".detail-header");
-                const title = $detailsHeader.find(".detail-header-title h1").text().trim();
-                const releaseDateStr = $detailsHeader
-                    .find(".detail-header-more [itemprop='datePublished']")
-                    .text()
-                    .trim();
-                const [year, month, day] = releaseDateStr.split("-").map(Number);
-                const releaseDate = createUTCDate(day, month, year);
-                const runtime = Number(
-                    $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim(),
-                );
-                const genres = $detailsHeader
-                    .find(".detail-header-more b:contains('Genre :') ~ a.c")
-                    .map((_, el) => $(el).text().trim())
-                    .get();
-                const directors = $detailsHeader
-                    .find(".detail-header-more [itemprop='director']")
-                    .map((_, el) => $(el).text().trim())
-                    .get();
-                const actors = $("[data-on-tab='casting'] h4 [itemprop='url']")
-                    .slice(0, 5)
-                    .map((_, el) => $(el).text().trim())
-                    .get();
-                const overview = $detailsHeader.find(".detail-header-description").text().trim();
-                const backdropUrl =
-                    $("[data-on-tab='photos'] a[data-bg]").attr("data-bg")?.trim().split("/q")[1] || null;
-                const posterUrl =
-                    $detailsHeader.find(".detail-header-poster img").attr("data-src")?.trim().split("/q")[1] || null;
+        const shows = await getMoviesShowtimes(movie.cinenewsId);
+        if (!shows) {
+            continue;
+        }
 
-                return {
-                    movie: {
-                        imdbId: movie.imdbId,
-                        tmdbId: null,
-                        slug: slugifyTitle(title, movie.cinenewsId),
-                        title,
-                        releaseDate,
-                        runtime,
-                        genres,
-                        originalLanguage: null,
-                        directors,
-                        actors,
-                        overview,
-                        backdrop: {
-                            medium: `https://www.cinenews.be/image/x1386x780/q${backdropUrl}`,
-                            large: `https://www.cinenews.be/image/x2275x1280/q${backdropUrl}`,
-                        },
-                        posterUrl,
-                        poster: {
-                            small: `https://www.cinenews.be/image/s185/q${posterUrl}`,
-                            medium: `https://www.cinenews.be/image/s342/q${posterUrl}`,
-                            large: `https://www.cinenews.be/image/s500/q${posterUrl}`,
-                        },
-                        videos: [],
-                    },
-                    shows,
-                };
-            }),
-        )
-    ).filter((movie) => movie !== null);
+        const response = await axios
+            .get(movie.url, {
+                headers: generateHeaders(),
+            })
+            .catch((error) => {
+                console.log(`Failed to fetch movie page at ${movie.url}`);
+                throw error;
+            });
+        if (response.status !== 200) {
+            continue;
+        }
+        const data = response.data;
+        const $ = cheerio.load(data);
+
+        const $detailsHeader = $(".detail-header");
+        const title = $detailsHeader.find(".detail-header-title h1").text().trim();
+        const releaseDateStr = $detailsHeader.find(".detail-header-more [itemprop='datePublished']").text().trim();
+        const [year, month, day] = releaseDateStr.split("-").map(Number);
+        const releaseDate = createUTCDate(day, month, year);
+        const runtime = Number(
+            $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim(),
+        );
+        const genres = $detailsHeader
+            .find(".detail-header-more b:contains('Genre :') ~ a.c")
+            .map((_, el) => $(el).text().trim())
+            .get();
+        const directors = $detailsHeader
+            .find(".detail-header-more [itemprop='director']")
+            .map((_, el) => $(el).text().trim())
+            .get();
+        const actors = $("[data-on-tab='casting'] h4 [itemprop='url']")
+            .slice(0, 5)
+            .map((_, el) => $(el).text().trim())
+            .get();
+        const overview = $detailsHeader.find(".detail-header-description").text().trim();
+        const backdropUrl = $("[data-on-tab='photos'] a[data-bg]").attr("data-bg")?.trim().split("/q")[1] || null;
+        const posterUrl =
+            $detailsHeader.find(".detail-header-poster img").attr("data-src")?.trim().split("/q")[1] || null;
+
+        movies.push({
+            movie: {
+                imdbId: movie.imdbId,
+                tmdbId: null,
+                slug: slugifyTitle(title, movie.cinenewsId),
+                title,
+                releaseDate,
+                runtime,
+                genres,
+                originalLanguage: null,
+                directors,
+                actors,
+                overview,
+                backdrop: {
+                    medium: `https://www.cinenews.be/image/x1386x780/q${backdropUrl}`,
+                    large: `https://www.cinenews.be/image/x2275x1280/q${backdropUrl}`,
+                },
+                poster: {
+                    small: `https://www.cinenews.be/image/s185/q${posterUrl}`,
+                    medium: `https://www.cinenews.be/image/s342/q${posterUrl}`,
+                    large: `https://www.cinenews.be/image/s500/q${posterUrl}`,
+                },
+                videos: [],
+            },
+            shows,
+        });
+
+        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
+    }
 
     return movies;
 };
 
 const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]> => {
-    const movies = (
-        await Promise.all(
-            fetchedMovies.map(async (movie) => {
-                const shows = await getMoviesShowtimes(movie.cinenewsId);
-                if (!shows) {
-                    return null;
-                }
+    const movies: Movie[] = [];
 
-                const response = await axios
-                    .get(
-                        `https://api.themoviedb.org/3/movie/${movie.tmdbId}?append_to_response=credits%2Cvideos&language=fr-BE`,
-                        {
-                            headers: {
-                                Accept: "application/json",
-                                Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
-                            },
-                        },
-                    )
-                    .catch((error) => {
-                        console.log(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
-                        throw error;
-                    });
-                if (response.status !== 200) {
-                    return null;
-                }
-                const data: TmdbMovieDetailsResponse = response.data;
-                const [year, month, day] = data.release_date.split("-").map(Number);
-                const releaseDate = createUTCDate(day, month, year);
+    for (const movie of fetchedMovies) {
+        const shows = await getMoviesShowtimes(movie.cinenewsId);
+        if (!shows) {
+            continue;
+        }
 
-                return {
-                    movie: {
-                        imdbId: movie.imdbId,
-                        tmdbId: movie.tmdbId,
-                        slug: slugifyTitle(data.title, movie.cinenewsId),
-                        title: data.title,
-                        releaseDate: releaseDate,
-                        runtime: data.runtime,
-                        genres: data.genres.map((genre) => genre.name),
-                        originalLanguage: languageCodeToFrenchName(data.original_language),
-                        directors: data.credits.crew
-                            .filter(
-                                (member) =>
-                                    member.department.toLowerCase() === "directing" &&
-                                    member.job.toLowerCase() === "director",
-                            )
-                            .map((director) => director.name),
-                        actors: data.credits.cast.map((actor) => actor.name).slice(0, 5),
-                        overview: data.overview,
-                        backdrop: {
-                            medium: `https://image.tmdb.org/t/p/w780${data.backdrop_path}`,
-                            large: `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`,
-                        },
-                        poster: {
-                            small: `https://image.tmdb.org/t/p/w185${data.poster_path}`,
-                            medium: `https://image.tmdb.org/t/p/w342${data.poster_path}`,
-                            large: `https://image.tmdb.org/t/p/w500${data.poster_path}`,
-                        },
-                        videos: data.videos.results
-                            .map(
-                                (video) =>
-                                    video.site.toLowerCase() === "youtube" &&
-                                    video.type.toLowerCase() === "trailer" && {
-                                        name: video.name,
-                                        key: video.key,
-                                    },
-                            )
-                            .filter((video) => video !== false),
+        const response = await axios
+            .get(
+                `https://api.themoviedb.org/3/movie/${movie.tmdbId}?append_to_response=credits%2Cvideos&language=fr-BE`,
+                {
+                    headers: {
+                        Accept: "application/json",
+                        Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
                     },
-                    shows,
-                };
-            }),
-        )
-    ).filter((movie) => movie !== null);
+                },
+            )
+            .catch((error) => {
+                console.log(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
+                throw error;
+            });
+        if (response.status !== 200) {
+            continue;
+        }
+        const data: TmdbMovieDetailsResponse = response.data;
+        const [year, month, day] = data.release_date.split("-").map(Number);
+        const releaseDate = createUTCDate(day, month, year);
+
+        movies.push({
+            movie: {
+                imdbId: movie.imdbId,
+                tmdbId: movie.tmdbId,
+                slug: slugifyTitle(data.title, movie.cinenewsId),
+                title: data.title,
+                releaseDate: releaseDate,
+                runtime: data.runtime,
+                genres: data.genres.map((genre) => genre.name),
+                originalLanguage: languageCodeToFrenchName(data.original_language),
+                directors: data.credits.crew
+                    .filter(
+                        (member) =>
+                            member.department.toLowerCase() === "directing" && member.job.toLowerCase() === "director",
+                    )
+                    .map((director) => director.name),
+                actors: data.credits.cast.map((actor) => actor.name).slice(0, 5),
+                overview: data.overview,
+                backdrop: {
+                    medium: `https://image.tmdb.org/t/p/w780${data.backdrop_path}`,
+                    large: `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`,
+                },
+                poster: {
+                    small: `https://image.tmdb.org/t/p/w185${data.poster_path}`,
+                    medium: `https://image.tmdb.org/t/p/w342${data.poster_path}`,
+                    large: `https://image.tmdb.org/t/p/w500${data.poster_path}`,
+                },
+                videos: data.videos.results
+                    .map(
+                        (video) =>
+                            video.site.toLowerCase() === "youtube" &&
+                            video.type.toLowerCase() === "trailer" && {
+                                name: video.name,
+                                key: video.key,
+                            },
+                    )
+                    .filter((video) => video !== false),
+            },
+            shows,
+        });
+    }
 
     return movies;
 };
