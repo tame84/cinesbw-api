@@ -4,6 +4,8 @@ import * as cheerio from "cheerio";
 import { createUTCDate, createUTCDatetime, formatDate } from "src/utils/date";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
 import { Movie, Show } from "src/utils/types";
+import { vValidator } from "@hono/valibot-validator";
+import * as v from "valibot";
 
 interface TmdbMovieDetailsResponse {
     backdrop_path: string;
@@ -368,52 +370,61 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
     return movies;
 };
 
-const app = new Hono().get("/", async (c) => {
-    const startTime = performance.now();
-    const max403Retries = 3;
-
-    for (let attempt = 0; attempt <= max403Retries; attempt++) {
-        try {
-            const moviesUrl = await getAllMoviesUrl();
-            const moviesData = await getAllMoviesData(moviesUrl);
-
-            const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb(moviesData);
-            const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
-
-            return c.json({
-                timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
-                counts: {
-                    scrapedMovies: moviesData.length,
-                    insertedMovies: insertedMoviesCount,
-                    insertedShows: insertedShowsCount,
-                    insertedShowtimes: insertedShowtimesCount,
-                    removedMovies: removedMoviesCount,
-                    removedShows: removedShowsCount,
-                },
-            });
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                if (error.response?.status === 403) {
-                    if (attempt < max403Retries) {
-                        console.log(`Access denied (403). Retrying... Attempt ${attempt + 1}/${max403Retries}`);
-                        await new Promise((resolve) => setTimeout(resolve, 2000));
-                        continue;
-                    } else {
-                        console.error(`Access denied (403) after ${max403Retries} attempts. Aborting.`);
-                        return c.json({ error: "Access denied (403). Max retries reached" }, 403);
-                    }
-                }
-
-                console.error(`Error fetching movies data: ${error.message}`);
-                console.error(`Request URL: ${error.config?.url}`);
-                console.error(`Request headers: ${JSON.stringify(error.config?.headers)}`);
-                console.error(`Response data:\n ${error.response?.data}`);
-            } else {
-                console.error("Error fetching movies data:", error);
-            }
-            return c.json({ error: "Failed to fetch movies data" }, 500);
+const app = new Hono().get(
+    "/",
+    vValidator("query", v.object({ apiKey: v.string() }), (result, c) => {
+        if (!result.success || result.output.apiKey !== process.env.SCRAPE_API_KEY) {
+            return c.json({ error: "Unauthorized" }, 401);
         }
-    }
-});
+    }),
+    async (c) => {
+        const startTime = performance.now();
+        const max403Retries = 3;
+
+        for (let attempt = 0; attempt <= max403Retries; attempt++) {
+            try {
+                const moviesUrl = await getAllMoviesUrl();
+                const moviesData = await getAllMoviesData(moviesUrl);
+
+                const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] =
+                    await addMoviesToDb(moviesData);
+                const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
+
+                return c.json({
+                    timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
+                    counts: {
+                        scrapedMovies: moviesData.length,
+                        insertedMovies: insertedMoviesCount,
+                        insertedShows: insertedShowsCount,
+                        insertedShowtimes: insertedShowtimesCount,
+                        removedMovies: removedMoviesCount,
+                        removedShows: removedShowsCount,
+                    },
+                });
+            } catch (error) {
+                if (axios.isAxiosError(error)) {
+                    if (error.response?.status === 403) {
+                        if (attempt < max403Retries) {
+                            console.log(`Access denied (403). Retrying... Attempt ${attempt + 1}/${max403Retries}`);
+                            await new Promise((resolve) => setTimeout(resolve, 2000));
+                            continue;
+                        } else {
+                            console.error(`Access denied (403) after ${max403Retries} attempts. Aborting.`);
+                            return c.json({ error: "Access denied (403). Max retries reached" }, 403);
+                        }
+                    }
+
+                    console.error(`Error fetching movies data: ${error.message}`);
+                    console.error(`Request URL: ${error.config?.url}`);
+                    console.error(`Request headers: ${JSON.stringify(error.config?.headers)}`);
+                    console.error(`Response data:\n ${error.response?.data}`);
+                } else {
+                    console.error("Error fetching movies data:", error);
+                }
+                return c.json({ error: "Failed to fetch movies data" }, 500);
+            }
+        }
+    },
+);
 
 export default app;
