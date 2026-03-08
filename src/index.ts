@@ -3,7 +3,6 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import scrapingRoutes from "./routes/scrape";
-import scraping2Routes from "./routes/scrape2";
 import { customLogger } from "src/utils/logger";
 
 const app = new Hono()
@@ -12,8 +11,7 @@ const app = new Hono()
         console.error(err);
         return c.text("Internal Server Error", 500);
     })
-    .route("/scrape", scrapingRoutes)
-    .route("/scrape2", scraping2Routes);
+    .route("/scrape", scrapingRoutes);
 
 serve(
     {

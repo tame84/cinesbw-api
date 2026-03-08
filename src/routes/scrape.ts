@@ -1,46 +1,9 @@
-import axios, { AxiosError } from "axios";
+import axios from "axios";
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
-import { createUTCDate, createUTCDatetime } from "src/utils/date";
-import { Movie } from "src/utils/types";
+import { createUTCDate, createUTCDatetime, formatDate } from "src/utils/date";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
-import { vValidator } from "@hono/valibot-validator";
-import * as v from "valibot";
-import { capitalize } from "../utils/string";
-
-interface TmdbBFindResponse {
-    movie_results: {
-        id: number;
-    }[];
-}
-
-interface UnfetchedMovie {
-    url: string;
-    imdbId: string | null;
-    cinenewsId: string | null;
-}
-
-interface FetchedMovie {
-    url: string;
-    imdbId: string;
-    tmdbId: number;
-    cinenewsId: string;
-}
-
-interface CinenewsShowtimesResponse {
-    data: {
-        data: {
-            YellowID: number;
-            YellowName: string;
-            data: {
-                MoviesShowtimeID: number;
-                ShowDateTime: string;
-                mVersion: string;
-                mVersionLong: string;
-            }[];
-        }[];
-    }[];
-}
+import { Movie, Show } from "src/utils/types";
 
 interface TmdbMovieDetailsResponse {
     backdrop_path: string;
@@ -73,45 +36,36 @@ interface TmdbMovieDetailsResponse {
     };
 }
 
+interface CinenewsShowtimesResponse {
+    data: {
+        data: {
+            YellowID: number;
+            YellowName: string;
+            data: {
+                MoviesShowtimeID: number;
+                ShowDateTime: string;
+                mVersion: string;
+                mVersionLong: string;
+            }[];
+        }[];
+    }[];
+}
+
 const CINENEWS_BASE_URL = "https://www.cinenews.be";
 
-const USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5; rv:127.0) Gecko/20100101 Firefox/127.0",
-];
-
-const HEADERS_WITHOUT_UA = {
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-    "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Brave";v="138"',
-    "sec-fetch-mode": "navigate",
-};
-
-const getRandomUserAgent = () => {
-    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-};
-
 const generateHeaders = () => {
-    const ua = getRandomUserAgent();
+    const ua =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
 
-    return {
+    const headers = {
         "User-Agent": ua,
-        ...HEADERS_WITHOUT_UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Brave";v="138"',
+        "sec-fetch-mode": "navigate",
     };
-};
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const baseDelayMs = Number(process.env.SCRAPE_DELAY_MS || 1500);
-const jitterDelayMs = Number(process.env.SCRAPE_JITTER_MS || 1500);
-
-const formatDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return `${year}-${month}-${day}`;
+    return headers;
 };
 
 const slugifyTitle = (title: string, cinenewsId: string) => {
@@ -126,394 +80,340 @@ const slugifyTitle = (title: string, cinenewsId: string) => {
         .replace(/^-+|-+$/g, "");
 };
 
-const displayNameFr = new Intl.DisplayNames(["fr"], { type: "language" });
-const languageCodeToFrenchName = (code: string) => {
-    return capitalize(displayNameFr.of(code) || code);
-};
+const getAllMoviesUrl = async (): Promise<string[]> => {
+    const moviesUrl = new Set<string>();
 
-const getMoviesTmdbId = async () => {
-    const movies = new Set<string>();
-
-    let startrow = 1;
+    let startRow = 1;
     while (true) {
         const response = await axios.get(
-            `${CINENEWS_BASE_URL}/fr/cinema/programme/region/brabant-wallon?startrow=${startrow}`,
+            CINENEWS_BASE_URL + `/fr/cinema/programme/region/brabant-wallon/?startrow=${startRow}`,
             {
                 headers: generateHeaders(),
             },
         );
         if (response.status !== 200) {
-            throw new Error(`Failed to fetch movies: ${response.status}`);
+            throw new Error(`Failed to fetch all movies: ${response.statusText}`);
         }
-        const data = response.data;
-        const $ = cheerio.load(data);
 
-        const newMovies = $(".movies-list")
+        const data = response.data;
+        const $page = cheerio.load(data);
+
+        const scrapedMoviesHref = $page(".movies-list")
             .find("article.movies-stk .stk-title a")
             .map((_, el) => el.attribs["href"])
             .get();
 
-        if (newMovies.length === 0) {
+        if (scrapedMoviesHref.length === 0) {
             break;
         }
 
-        newMovies.forEach((href) => movies.add(href));
-        startrow += 24;
-        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
+        scrapedMoviesHref.forEach((href) => moviesUrl.add(CINENEWS_BASE_URL + href));
+        startRow += 24;
     }
 
-    const unfetchedMovies: UnfetchedMovie[] = [];
-    const moviesPage: { pageUrl: string; $: cheerio.CheerioAPI }[] = [];
-
-    for (const movieHref of movies) {
-        const pageUrl = `${CINENEWS_BASE_URL}${movieHref}`;
-
-        try {
-            const response = await axios.get(pageUrl, {
-                headers: generateHeaders(),
-            });
-
-            if (response.status !== 200) {
-                unfetchedMovies.push({ url: pageUrl, imdbId: null, cinenewsId: null });
-            } else {
-                const data = response.data;
-                const $ = cheerio.load(data);
-                moviesPage.push({
-                    pageUrl,
-                    $,
-                });
-            }
-        } catch (error) {
-            console.log(`Failed to fetch movie page at ${pageUrl}`);
-            throw error;
-        }
-
-        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
-    }
-
-    const fetchedMovies: FetchedMovie[] = (
-        await Promise.all(
-            moviesPage.map(async (page) => {
-                const imdbId = page.$("[data-vod-imdb]").attr("data-vod-imdb");
-                const cinenewsId = page.$("[data-tbl-id]").attr("data-tbl-id");
-                if (!imdbId || !cinenewsId) {
-                    unfetchedMovies.push({ url: page.pageUrl, imdbId: null, cinenewsId: cinenewsId || null });
-                    return null;
-                }
-
-                const response = await axios
-                    .get(`https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id&language=fr-BE`, {
-                        headers: {
-                            Accept: "application/json",
-                            Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
-                        },
-                    })
-                    .catch((error) => {
-                        console.log(`Failed to fetch TMDb data for IMDb ID ${imdbId}`);
-                        throw error;
-                    });
-                if (response.status !== 200) {
-                    unfetchedMovies.push({ url: page.pageUrl, imdbId, cinenewsId });
-                    return null;
-                }
-                const data: TmdbBFindResponse = response.data;
-
-                if (data.movie_results.length === 0) {
-                    unfetchedMovies.push({ url: page.pageUrl, imdbId: null, cinenewsId: cinenewsId || null });
-                    return null;
-                }
-
-                return {
-                    url: page.pageUrl,
-                    imdbId,
-                    tmdbId: data.movie_results[0].id,
-                    cinenewsId,
-                };
-            }),
-        )
-    ).filter((details) => details !== null);
-
-    return { fetchedMovies, unfetchedMovies };
+    return Array.from(moviesUrl);
 };
 
-const getMoviesShowtimes = async (cinenewsId: string) => {
+const getMovieShowtimes = async (cinenewsId: string) => {
     let shows = [];
     const today = new Date();
     let dateIterator = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    // Iterate over the next 7 days or until we hit a Wednesday (when the new movies are released)
     while (true) {
-        const showtimesResponse = await axios
-            .get(
-                `${CINENEWS_BASE_URL}/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${cinenewsId}&v3&regionId=3&selDate=${formatDate(
-                    dateIterator,
-                )}`,
-                {
-                    headers: { ...generateHeaders(), "X-Requested-With": "XMLHttpRequest" },
-                },
-            )
-            .catch((error) => {
-                console.log(`Failed to fetch showtimes for movie ID ${cinenewsId} on ${formatDate(dateIterator)}`);
-                throw error;
-            });
-        if (showtimesResponse.status !== 200) {
-            return null;
+        const response = await axios.get(
+            CINENEWS_BASE_URL +
+                `/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${cinenewsId}&v3&regionId=3&selDate=${formatDate(dateIterator)}`,
+            {
+                headers: { ...generateHeaders(), "X-Requested-With": "XMLHttpRequest" },
+            },
+        );
+        if (response.status !== 200) {
+            throw new Error(`Failed to fetch showtimes for movie ID ${cinenewsId} on ${formatDate(dateIterator)}`);
         }
-        const showtimesData: CinenewsShowtimesResponse = showtimesResponse.data;
 
-        if (showtimesData.data.length === 0) {
+        const data: CinenewsShowtimesResponse = response.data;
+
+        if (data.data.length === 0) {
             if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
                 break;
             }
-            dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
+
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            dateIterator.setDate(dateIterator.getDate() + 1);
             continue;
         }
 
         shows.push({
-            date: createUTCDate(dateIterator.getDate(), dateIterator.getMonth() + 1, dateIterator.getFullYear()),
-            cinemas: await Promise.all(
-                showtimesData.data[0].data.map(async (cinema) => {
-                    return {
-                        cinema: {
-                            name: cinema.YellowName,
-                            id: cinema.YellowID,
-                        },
-                        showtimes: cinema.data.map((show) => {
-                            const [dateStr, timeStr] = show.ShowDateTime.split(" ");
-                            const [day, month, year] = dateStr.split("-").map(Number);
-                            const [hours, minutes] = timeStr.split(":").map(Number);
-                            const date = createUTCDate(day, month, year);
-                            const dateTime = createUTCDatetime(date, hours, minutes);
+            date: createUTCDate(dateIterator.getDate(), dateIterator.getMonth(), dateIterator.getFullYear()),
+            cinemas: data.data[0].data.map((cinema) => ({
+                cinema: {
+                    name: cinema.YellowName,
+                    id: cinema.YellowID,
+                },
+                showtimes: cinema.data.map((show) => {
+                    const [dateStr, timeStr] = show.ShowDateTime.split(" ");
+                    const [day, month, year] = dateStr.split("-").map(Number);
+                    const [hours, minutes] = timeStr.split(":").map(Number);
+                    const date = createUTCDate(day, month, year);
+                    const datetime = createUTCDatetime(date, hours, minutes);
 
-                            return {
-                                showDatetime: dateTime,
-                                version: {
-                                    short: show.mVersion,
-                                    long: show.mVersionLong,
-                                },
-                            };
-                        }),
+                    return {
+                        showDatetime: datetime,
+                        version: {
+                            short: show.mVersion,
+                            long: show.mVersionLong,
+                        },
                     };
                 }),
-            ),
+            })),
         });
 
-        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
-        dateIterator = new Date(dateIterator.setDate(dateIterator.getDate() + 1));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        dateIterator.setDate(dateIterator.getDate() + 1);
     }
 
     return shows;
 };
 
-const getMoviesCinenewsData = async (unfetchedMovies: UnfetchedMovie[]): Promise<Movie[]> => {
-    const movies: Movie[] = [];
-
-    for (const movie of unfetchedMovies) {
-        if (!movie.cinenewsId) {
-            continue;
-        }
-
-        const shows = await getMoviesShowtimes(movie.cinenewsId);
-        if (!shows) {
-            continue;
-        }
-
-        const response = await axios
-            .get(movie.url, {
-                headers: generateHeaders(),
-            })
-            .catch((error) => {
-                console.log(`Failed to fetch movie page at ${movie.url}`);
-                throw error;
-            });
-        if (response.status !== 200) {
-            continue;
-        }
-        const data = response.data;
-        const $ = cheerio.load(data);
-
-        const $detailsHeader = $(".detail-header");
-        const title = $detailsHeader.find(".detail-header-title h1").text().trim();
-        const releaseDateStr = $detailsHeader.find(".detail-header-more [itemprop='datePublished']").text().trim();
-        const [year, month, day] = releaseDateStr.split("-").map(Number);
-        const releaseDate = createUTCDate(day, month, year);
-        const runtime = Number(
-            $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim(),
-        );
-        const genres = $detailsHeader
-            .find(".detail-header-more b:contains('Genre :') ~ a.c")
-            .map((_, el) => $(el).text().trim())
-            .get();
-        const directors = $detailsHeader
-            .find(".detail-header-more [itemprop='director']")
-            .map((_, el) => $(el).text().trim())
-            .get();
-        const actors = $("[data-on-tab='casting'] h4 [itemprop='url']")
-            .slice(0, 5)
-            .map((_, el) => $(el).text().trim())
-            .get();
-        const overview = $detailsHeader.find(".detail-header-description").text().trim();
-        const backdropUrl = $("[data-on-tab='photos'] a[data-bg]").attr("data-bg")?.trim().split("/q")[1] || null;
-        const posterUrl =
-            $detailsHeader.find(".detail-header-poster img").attr("data-src")?.trim().split("/q")[1] || null;
-
-        movies.push({
-            movie: {
-                imdbId: movie.imdbId,
-                tmdbId: null,
-                slug: slugifyTitle(title, movie.cinenewsId),
-                title,
-                releaseDate,
-                runtime,
-                genres,
-                originalLanguage: null,
-                directors,
-                actors,
-                overview,
-                backdrop: {
-                    medium: `https://www.cinenews.be/image/x1386x780/q${backdropUrl}`,
-                    large: `https://www.cinenews.be/image/x2275x1280/q${backdropUrl}`,
-                },
-                poster: {
-                    small: `https://www.cinenews.be/image/s185/q${posterUrl}`,
-                    medium: `https://www.cinenews.be/image/s342/q${posterUrl}`,
-                    large: `https://www.cinenews.be/image/s500/q${posterUrl}`,
-                },
-                videos: [],
-            },
-            shows,
-        });
-
-        await sleep(baseDelayMs + Math.random() * jitterDelayMs);
-    }
-
-    return movies;
-};
-
-const getMoviesTmdbData = async (fetchedMovies: FetchedMovie[]): Promise<Movie[]> => {
-    const movies: Movie[] = [];
-
-    for (const movie of fetchedMovies) {
-        const shows = await getMoviesShowtimes(movie.cinenewsId);
-        if (!shows) {
-            continue;
-        }
-
-        const response = await axios
-            .get(
-                `https://api.themoviedb.org/3/movie/${movie.tmdbId}?append_to_response=credits%2Cvideos&language=fr-BE`,
-                {
-                    headers: {
-                        Accept: "application/json",
-                        Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
-                    },
-                },
-            )
-            .catch((error) => {
-                console.log(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
-                throw error;
-            });
-        if (response.status !== 200) {
-            continue;
-        }
-        const data: TmdbMovieDetailsResponse = response.data;
-        const [year, month, day] = data.release_date.split("-").map(Number);
-        const releaseDate = createUTCDate(day, month, year);
-
-        movies.push({
-            movie: {
-                imdbId: movie.imdbId,
-                tmdbId: movie.tmdbId,
-                slug: slugifyTitle(data.title, movie.cinenewsId),
-                title: data.title,
-                releaseDate: releaseDate,
-                runtime: data.runtime,
-                genres: data.genres.map((genre) => genre.name),
-                originalLanguage: languageCodeToFrenchName(data.original_language),
-                directors: data.credits.crew
-                    .filter(
-                        (member) =>
-                            member.department.toLowerCase() === "directing" && member.job.toLowerCase() === "director",
-                    )
-                    .map((director) => director.name),
-                actors: data.credits.cast.map((actor) => actor.name).slice(0, 5),
-                overview: data.overview,
-                backdrop: {
-                    medium: `https://image.tmdb.org/t/p/w780${data.backdrop_path}`,
-                    large: `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`,
-                },
-                poster: {
-                    small: `https://image.tmdb.org/t/p/w185${data.poster_path}`,
-                    medium: `https://image.tmdb.org/t/p/w342${data.poster_path}`,
-                    large: `https://image.tmdb.org/t/p/w500${data.poster_path}`,
-                },
-                videos: data.videos.results
-                    .map(
-                        (video) =>
-                            video.site.toLowerCase() === "youtube" &&
-                            video.type.toLowerCase() === "trailer" && {
-                                name: video.name,
-                                key: video.key,
-                            },
-                    )
-                    .filter((video) => video !== false),
-            },
-            shows,
-        });
-    }
-
-    return movies;
-};
-
-const app = new Hono().get(
-    "/",
-    vValidator("query", v.object({ apiKey: v.string() }), (result, c) => {
-        if (!result.success || result.output.apiKey !== process.env.SCRAPE_API_KEY) {
-            return c.json({ error: "Unauthorized" }, 401);
-        }
-    }),
-    async (c) => {
-        const startTime = performance.now();
-        const max403Retries = 2;
-
-        for (let attempt = 1; attempt <= max403Retries; attempt++) {
-            try {
-                const moviesTmdbId = await getMoviesTmdbId();
-                const fetchedMoviesData = await getMoviesTmdbData(moviesTmdbId.fetchedMovies);
-                const unfetchedMoviesData = await getMoviesCinenewsData(moviesTmdbId.unfetchedMovies);
-
-                const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb([
-                    ...fetchedMoviesData,
-                    ...unfetchedMoviesData,
-                ]);
-                const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
-
-                return c.json({
-                    timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
-                    counts: {
-                        scrapedMovies: fetchedMoviesData.length + unfetchedMoviesData.length,
-                        insertedMovies: insertedMoviesCount,
-                        insertedShows: insertedShowsCount,
-                        insertedShowtimes: insertedShowtimesCount,
-                        removedMovies: removedMoviesCount,
-                        removedShows: removedShowsCount,
-                    },
+const getAllMoviesData = async (moviesUrl: string[]) => {
+    const moviesIds = (
+        await Promise.all(
+            moviesUrl.map(async (url) => {
+                const response = await axios.get(url, {
+                    headers: generateHeaders(),
                 });
-            } catch (error) {
-                if (error instanceof AxiosError && error.response?.status === 403) {
+                if (response.status !== 200) {
+                    throw new Error(`Failed to fetch movie data for ${url}: ${response.statusText}`);
+                }
+
+                const data = response.data;
+                const $page = cheerio.load(data);
+
+                const imdbId = $page("[data-vod-imdb]").attr("data-vod-imdb");
+                const cinenewsId = $page("[data-tbl-id]").attr("data-tbl-id") as string;
+
+                if (!cinenewsId) {
+                    throw new Error(`Failed to extract Cinenews ID for ${url}`);
+                }
+
+                if (imdbId) {
+                    const response = await axios.get(
+                        `https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id&language=fr-BE`,
+                        {
+                            headers: {
+                                Accept: "application/json",
+                                Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
+                            },
+                        },
+                    );
+                    if (response.status !== 200) {
+                        throw new Error(`Failed to fetch movie data from TMDB for ${imdbId}: ${response.statusText}`);
+                    }
+
+                    const data: { movie_results: { id: number }[] } = response.data;
+                    if (data.movie_results.length === 0) {
+                        return {
+                            url,
+                            imdbId,
+                            tmdbId: null,
+                            cinenewsId,
+                            $page,
+                        };
+                    }
+
+                    return {
+                        url,
+                        imdbId,
+                        tmdbId: data.movie_results[0].id,
+                        cinenewsId,
+                        $page,
+                    };
+                } else {
+                    return {
+                        url,
+                        imdbId: null,
+                        tmdbId: null,
+                        cinenewsId,
+                        $page,
+                    };
+                }
+            }),
+        )
+    ).filter((movie) => movie !== undefined);
+
+    const movies: Movie[] = await Promise.all(
+        moviesIds.map(async (movie) => {
+            const shows: Show[] = await getMovieShowtimes(movie.cinenewsId);
+
+            if (movie.tmdbId) {
+                const response = await axios.get(
+                    `https://api.themoviedb.org/3/movie/${movie.tmdbId}?append_to_response=credits%2Cvideos&language=fr-BE`,
+                    {
+                        headers: {
+                            Accept: "application/json",
+                            Authorization: `Bearer ${process.env.TMDB_ACCESS_TOKEN}`,
+                        },
+                    },
+                );
+                if (response.status !== 200) {
+                    throw new Error(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
+                }
+
+                const data: TmdbMovieDetailsResponse = response.data;
+                const [year, month, day] = data.release_date.split("-").map(Number);
+                const releaseDate = createUTCDate(day, month, year);
+
+                return {
+                    movie: {
+                        imdbId: movie.imdbId,
+                        tmdbId: movie.tmdbId,
+                        slug: slugifyTitle(data.title, movie.cinenewsId),
+                        title: data.title,
+                        releaseDate: releaseDate,
+                        runtime: data.runtime,
+                        genres: data.genres.map((genre) => genre.name),
+                        overview: data.overview,
+                        originalLanguage: data.original_language,
+                        directors: data.credits.crew
+                            .filter(
+                                (member) =>
+                                    member.department.toLowerCase() === "directing" &&
+                                    member.job.toLowerCase() === "director",
+                            )
+                            .map((director) => director.name),
+                        actors: data.credits.cast.map((actor) => actor.name).slice(0, 5),
+                        backdrop: {
+                            medium: `https://image.tmdb.org/t/p/w780${data.backdrop_path}`,
+                            large: `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`,
+                        },
+                        poster: {
+                            small: `https://image.tmdb.org/t/p/w185${data.poster_path}`,
+                            medium: `https://image.tmdb.org/t/p/w342${data.poster_path}`,
+                            large: `https://image.tmdb.org/t/p/w500${data.poster_path}`,
+                        },
+                        videos: data.videos.results
+                            .filter(
+                                (video) =>
+                                    video.site.toLowerCase() === "youtube" && video.type.toLowerCase() === "trailer",
+                            )
+                            .map((video) => ({ name: video.name, key: video.key })),
+                    },
+                    shows,
+                };
+            } else {
+                const $detailsHeader = movie.$page(".detail-header");
+                const title = $detailsHeader.find(".detail-header-title h1").text().trim();
+                const releaseDateStr = $detailsHeader
+                    .find(".detail-header-more [itemprop='datePublished']")
+                    .text()
+                    .trim();
+                const [year, month, day] = releaseDateStr.split("-").map(Number);
+                const releaseDate = createUTCDate(day, month, year);
+                const runtime = Number(
+                    $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim(),
+                );
+                const genres = $detailsHeader
+                    .find(".detail-header-more b:contains('Genre :') ~ a.c")
+                    .map((_, el) => movie.$page(el).text().trim())
+                    .get();
+                const overview = $detailsHeader.find(".detail-header-description").text().trim();
+                const directors = $detailsHeader
+                    .find(".detail-header-more [itemprop='director']")
+                    .map((_, el) => movie.$page(el).text().trim())
+                    .get();
+                const actors = movie
+                    .$page("[data-on-tab='casting'] h4 [itemprop='url']")
+                    .slice(0, 5)
+                    .map((_, el) => movie.$page(el).text().trim())
+                    .get();
+                const backdropUrl =
+                    movie.$page("[data-on-tab='photos'] a[data-bg]").attr("data-bg")?.trim().split("/q")[1] || null;
+                const posterUrl =
+                    $detailsHeader.find(".detail-header-poster img").attr("data-src")?.trim().split("/q")[1] || null;
+
+                return {
+                    movie: {
+                        imdbId: movie.imdbId,
+                        tmdbId: null,
+                        slug: slugifyTitle(title, movie.cinenewsId),
+                        title,
+                        releaseDate,
+                        runtime,
+                        genres,
+                        overview,
+                        originalLanguage: null,
+                        directors,
+                        actors,
+                        backdrop: backdropUrl
+                            ? {
+                                  medium: `https://www.cinenews.be/image/x1386x780/q${backdropUrl}`,
+                                  large: `https://www.cinenews.be/image/x2275x1280/q${backdropUrl}`,
+                              }
+                            : null,
+                        poster: posterUrl
+                            ? {
+                                  small: `https://www.cinenews.be/image/s185/q${posterUrl}`,
+                                  medium: `https://www.cinenews.be/image/s342/q${posterUrl}`,
+                                  large: `https://www.cinenews.be/image/s500/q${posterUrl}`,
+                              }
+                            : null,
+                        videos: null,
+                    },
+                    shows,
+                };
+            }
+        }),
+    );
+
+    return movies;
+};
+
+const app = new Hono().get("/", async (c) => {
+    const startTime = performance.now();
+    const max403Retries = 3;
+
+    for (let attempt = 0; attempt <= max403Retries; attempt++) {
+        try {
+            const moviesUrl = await getAllMoviesUrl();
+            const moviesData = await getAllMoviesData(moviesUrl);
+
+            const [insertedMoviesCount, insertedShowsCount, insertedShowtimesCount] = await addMoviesToDb(moviesData);
+            const [removedShowsCount, removedMoviesCount] = await removeMoviesFromDb();
+
+            return c.json({
+                timeTakenMs: Number((performance.now() - startTime).toFixed(0)),
+                counts: {
+                    scrapedMovies: moviesData.length,
+                    insertedMovies: insertedMoviesCount,
+                    insertedShows: insertedShowsCount,
+                    insertedShowtimes: insertedShowtimesCount,
+                    removedMovies: removedMoviesCount,
+                    removedShows: removedShowsCount,
+                },
+            });
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                if (error.response?.status === 403) {
                     if (attempt < max403Retries) {
-                        console.log(`Access denied (403). Retrying... Attempt ${attempt}/${max403Retries}`);
-                        await sleep(2000 * attempt);
+                        console.log(`Access denied (403). Retrying... Attempt ${attempt + 1}/${max403Retries}`);
+                        await new Promise((resolve) => setTimeout(resolve, 2000));
                         continue;
                     } else {
-                        console.error(error);
-                        console.log(`Access denied (403). Max retries reached.`);
-                        return c.json({ error: "Access denied (403). Max retries reached." }, 403);
+                        console.error(`Access denied (403) after ${max403Retries} attempts. Aborting.`);
+                        return c.json({ error: "Access denied (403). Max retries reached" }, 403);
                     }
                 }
-                console.error(error);
-                return c.json({ error: "An error occurred during scraping." }, 500);
+
+                console.error(`Error fetching movies data: ${error.message}`);
+                console.error(`Request URL: ${error.config?.url}`);
+                console.error(`Request headers: ${JSON.stringify(error.config?.headers)}`);
+                console.error(`Response data:\n ${error.response?.data}`);
+            } else {
+                console.error("Error fetching movies data:", error);
             }
+            return c.json({ error: "Failed to fetch movies data" }, 500);
         }
-    },
-);
+    }
+});
 
 export default app;
