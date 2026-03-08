@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
-import { createUTCDate, createUTCDateTime } from "src/utils/date";
+import { createUTCDate, createUTCDatetime } from "src/utils/date";
 import { Movie } from "src/utils/types";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
 import { vValidator } from "@hono/valibot-validator";
@@ -273,18 +273,18 @@ const getMoviesShowtimes = async (cinenewsId: string) => {
                 showtimesData.data[0].data.map(async (cinema) => {
                     return {
                         cinema: {
-                            yellowName: cinema.YellowName,
-                            yellowId: cinema.YellowID,
+                            name: cinema.YellowName,
+                            id: cinema.YellowID,
                         },
-                        times: cinema.data.map((show) => {
+                        showtimes: cinema.data.map((show) => {
                             const [dateStr, timeStr] = show.ShowDateTime.split(" ");
                             const [day, month, year] = dateStr.split("-").map(Number);
                             const [hours, minutes] = timeStr.split(":").map(Number);
                             const date = createUTCDate(day, month, year);
-                            const dateTime = createUTCDateTime(date, hours, minutes);
+                            const dateTime = createUTCDatetime(date, hours, minutes);
 
                             return {
-                                showDateTime: dateTime,
+                                showDatetime: dateTime,
                                 version: {
                                     short: show.mVersion,
                                     long: show.mVersionLong,

@@ -1,12 +1,41 @@
-interface Show {
+interface MovieData {
+    imdbId: string | null;
+    tmdbId: number | null;
+    slug: string;
+    title: string;
+    releaseDate: Date;
+    runtime: number;
+    genres: string[];
+    overview: string;
+    originalLanguage: string | null;
+    directors: string[];
+    actors: string[];
+    backdrop: {
+        medium: string;
+        large: string;
+    } | null;
+    poster: {
+        small: string;
+        medium: string;
+        large: string;
+    } | null;
+    videos:
+        | {
+              name: string;
+              key: string;
+          }[]
+        | null;
+}
+
+export interface Show {
     date: Date;
     cinemas: {
         cinema: {
-            yellowName: string;
-            yellowId: number;
+            name: string;
+            id: number;
         };
-        times: {
-            showDateTime: Date;
+        showtimes: {
+            showDatetime: Date;
             version: {
                 short: string;
                 long: string;
@@ -16,32 +45,7 @@ interface Show {
 }
 
 export interface Movie {
-    movie: {
-        imdbId: string | null;
-        tmdbId: number | null;
-        slug: string;
-        title: string;
-        releaseDate: Date;
-        runtime: number;
-        genres: string[];
-        originalLanguage: string | null;
-        directors: string[];
-        actors: string[];
-        overview: string;
-        backdrop: {
-            medium: string;
-            large: string;
-        };
-        poster: {
-            small: string;
-            medium: string;
-            large: string;
-        };
-        videos: {
-            name: string;
-            key: string;
-        }[];
-    };
+    movie: MovieData;
     shows: Show[];
 }
 

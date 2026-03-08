@@ -95,12 +95,12 @@ export const addMoviesToDb = async (movies: Movie[]) => {
             if (showtimes && showtimes.length > 0) {
                 allShowtimesToInsert.push(
                     ...showtimes.flatMap((c) =>
-                        c.times.map((t) => ({
-                            dateTime: t.showDateTime,
+                        c.showtimes.map((t) => ({
+                            dateTime: t.showDatetime,
                             version: t.version.short,
                             versionLong: t.version.long,
                             showUuid: show.uuid,
-                            cinemaId: c.cinema.yellowId,
+                            cinemaId: c.cinema.id,
                         })),
                     ),
                 );
