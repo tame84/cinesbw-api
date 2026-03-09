@@ -4,6 +4,10 @@ import { Hono } from "hono";
 import { logger } from "hono/logger";
 import scrapingRoutes from "./routes/scrape";
 import { customLogger } from "src/utils/logger";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat";
+
+dayjs.extend(customParseFormat);
 
 const app = new Hono()
     .use(logger(customLogger))

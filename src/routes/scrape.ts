@@ -168,7 +168,7 @@ const getMovieShowtimes = async (cinenewsId: string) => {
                     id: cinema.YellowID,
                 },
                 showtimes: cinema.data.map((show) => {
-                    const datetime = dayjs(show.ShowDateTime);
+                    const datetime = dayjs(show.ShowDateTime, "DD-MM-YYYY HH:mm");
 
                     return {
                         showDatetime: datetime.format(),
