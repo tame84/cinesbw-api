@@ -1,11 +1,11 @@
 import axios from "axios";
 import { Hono } from "hono";
 import * as cheerio from "cheerio";
-import { createUTCDate, createUTCDatetime, formatDate } from "src/utils/date";
 import { addMoviesToDb, removeMoviesFromDb } from "src/db";
 import { Movie, Show } from "src/utils/types";
 import { vValidator } from "@hono/valibot-validator";
 import * as v from "valibot";
+import dayjs from "dayjs";
 
 interface TmdbMovieDetailsResponse {
     backdrop_path: string;
@@ -118,49 +118,47 @@ const getAllMoviesUrl = async (): Promise<string[]> => {
 
 const getMovieShowtimes = async (cinenewsId: string) => {
     let shows = [];
-    const today = new Date();
-    let dateIterator = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const today = dayjs().startOf("date").toDate();
+    let dateIterator = dayjs().startOf("date");
     // Iterate over the next 7 days or until we hit a Wednesday (when the new movies are released)
     while (true) {
         const response = await axios.get(
             CINENEWS_BASE_URL +
-                `/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${cinenewsId}&v3&regionId=3&selDate=${formatDate(dateIterator)}`,
+                `/modules/ajax_showtimes.cfm?Lang=fr&act=movieShowtimes&moviesId=${cinenewsId}&v3&regionId=3&selDate=${dateIterator.format("YYYY-MM-DD")}`,
             {
                 headers: { ...generateHeaders(), "X-Requested-With": "XMLHttpRequest" },
             },
         );
         if (response.status !== 200) {
-            throw new Error(`Failed to fetch showtimes for movie ID ${cinenewsId} on ${formatDate(dateIterator)}`);
+            throw new Error(
+                `Failed to fetch showtimes for movie ID ${cinenewsId} on ${dateIterator.format("YYYY-MM-DD")}`,
+            );
         }
 
         const data: CinenewsShowtimesResponse = response.data;
 
         if (data.data.length === 0) {
-            if (dateIterator.getTime() - today.getTime() > 1000 * 60 * 60 * 24 * 7) {
+            if (dateIterator.diff(today) > 1000 * 60 * 60 * 24 * 7) {
                 break;
             }
 
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            dateIterator.setDate(dateIterator.getDate() + 1);
+            dateIterator = dateIterator.add(1, "day");
             continue;
         }
 
         shows.push({
-            date: createUTCDate(dateIterator.getDate(), dateIterator.getMonth(), dateIterator.getFullYear()),
+            date: dateIterator.format(),
             cinemas: data.data[0].data.map((cinema) => ({
                 cinema: {
                     name: cinema.YellowName,
                     id: cinema.YellowID,
                 },
                 showtimes: cinema.data.map((show) => {
-                    const [dateStr, timeStr] = show.ShowDateTime.split(" ");
-                    const [day, month, year] = dateStr.split("-").map(Number);
-                    const [hours, minutes] = timeStr.split(":").map(Number);
-                    const date = createUTCDate(day, month, year);
-                    const datetime = createUTCDatetime(date, hours, minutes);
+                    const datetime = dayjs(show.ShowDateTime);
 
                     return {
-                        showDatetime: datetime,
+                        showDatetime: datetime.format(),
                         version: {
                             short: show.mVersion,
                             long: show.mVersionLong,
@@ -171,7 +169,7 @@ const getMovieShowtimes = async (cinenewsId: string) => {
         });
 
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        dateIterator.setDate(dateIterator.getDate() + 1);
+        dateIterator = dateIterator.add(1, "day");
     }
 
     return shows;
@@ -262,8 +260,11 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                 }
 
                 const data: TmdbMovieDetailsResponse = response.data;
-                const [year, month, day] = data.release_date.split("-").map(Number);
-                const releaseDate = createUTCDate(day, month, year);
+                const releaseDate = dayjs(data.release_date);
+                let releaseDateStr = null;
+                if (releaseDate.isValid()) {
+                    releaseDateStr = releaseDate.format();
+                }
 
                 return {
                     movie: {
@@ -271,7 +272,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                         tmdbId: movie.tmdbId,
                         slug: slugifyTitle(data.title, movie.cinenewsId),
                         title: data.title,
-                        releaseDate: releaseDate,
+                        releaseDate: releaseDateStr,
                         runtime: data.runtime,
                         genres: data.genres.map((genre) => genre.name),
                         overview: data.overview,
@@ -305,12 +306,16 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
             } else {
                 const $detailsHeader = movie.$page(".detail-header");
                 const title = $detailsHeader.find(".detail-header-title h1").text().trim();
-                const releaseDateStr = $detailsHeader
+                let releaseDateStr: string | null = $detailsHeader
                     .find(".detail-header-more [itemprop='datePublished']")
                     .text()
                     .trim();
-                const [year, month, day] = releaseDateStr.split("-").map(Number);
-                const releaseDate = createUTCDate(day, month, year);
+                const releaseDate = dayjs(releaseDateStr);
+                if (releaseDate.isValid()) {
+                    releaseDateStr = releaseDate.format();
+                } else {
+                    releaseDateStr = null;
+                }
                 const runtime = Number(
                     $detailsHeader.find(".list-dot span:contains('minutes')").text().split("minutes")[0].trim(),
                 );
@@ -339,7 +344,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                         tmdbId: null,
                         slug: slugifyTitle(title, movie.cinenewsId),
                         title,
-                        releaseDate,
+                        releaseDate: releaseDateStr,
                         runtime,
                         genres,
                         overview,

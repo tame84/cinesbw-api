@@ -17,7 +17,7 @@ export const moviesTable = pgTable("movies", {
     imdbId: text("imdb_id").unique(),
     slug: text("slug").notNull().unique(),
     title: text("title").notNull(),
-    releaseDate: date("release_date", { mode: "date" }),
+    releaseDate: text("release_date"),
     runtime: integer("runtime").notNull().default(0),
     originalLanguage: text("original_language"),
     directors: text("directors").array(),
@@ -41,7 +41,7 @@ export const showsTable = pgTable(
     "shows",
     {
         uuid: uuid("uuid").primaryKey().defaultRandom(),
-        date: date("date", { mode: "date" }).notNull(),
+        date: text("date").notNull(),
         movieUuid: uuid("movie_uuid")
             .notNull()
             .references(() => moviesTable.uuid, { onDelete: "cascade", onUpdate: "cascade" }),
@@ -52,7 +52,7 @@ export const showsTable = pgTable(
 export const showtimesTable = pgTable(
     "showtimes",
     {
-        dateTime: timestamp("date_time", { mode: "date" }).notNull(),
+        datetime: text("datetime").notNull(),
         version: text("version").notNull(),
         versionLong: text("version_long").notNull(),
         showUuid: uuid("show_uuid")
@@ -62,5 +62,5 @@ export const showtimesTable = pgTable(
             .notNull()
             .references(() => cinemasTable.id, { onDelete: "cascade", onUpdate: "cascade" }),
     },
-    (t) => [unique().on(t.cinemaId, t.showUuid, t.version, t.dateTime)],
+    (t) => [unique().on(t.cinemaId, t.showUuid, t.version, t.datetime)],
 );

@@ -3,6 +3,7 @@ import { eq, inArray, lt, notExists } from "drizzle-orm";
 import { genresTable, moviesGenresTable, moviesTable, showsTable, showtimesTable } from "src/db/schema";
 import { Movie } from "src/utils/types";
 import ws from "ws";
+import dayjs from "dayjs";
 
 export const db = drizzle({
     connection: process.env.NEON_DATABASE_URL!,
@@ -27,7 +28,7 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         tmdbId: m.movie.tmdbId,
         slug: m.movie.slug,
         title: m.movie.title,
-        releaseDate: m.movie.releaseDate && !isNaN(m.movie.releaseDate.getTime()) ? m.movie.releaseDate : null,
+        releaseDate: m.movie.releaseDate,
         runtime: m.movie.runtime,
         originalLanguage: m.movie.originalLanguage,
         directors: m.movie.directors,
@@ -46,7 +47,7 @@ export const addMoviesToDb = async (movies: Movie[]) => {
             .onConflictDoUpdate({ target: moviesTable.slug, set: { slug: moviesTable.slug } })
             .returning({ uuid: moviesTable.uuid, slug: moviesTable.slug });
 
-        const allShowsToInsert: Array<{ date: Date; movieUuid: string; movieSlug: string }> = [];
+        const allShowsToInsert: Array<{ date: string; movieUuid: string; movieSlug: string }> = [];
         for (const movie of insertedMovies) {
             const existingMovie = movies.find((m) => m.movie.slug === movie.slug);
 
@@ -86,17 +87,17 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         const allShowtimesToInsert = [];
         for (const show of insertedShows) {
             const movieSlug = allShowsToInsert.find(
-                (s) => s.movieUuid === show.movieUuid && s.date.getTime() === show.date.getTime(),
+                (s) => s.movieUuid === show.movieUuid && s.date === show.date,
             )?.movieSlug;
             const existingMovie = movies.find((m) => m.movie.slug === movieSlug);
-            const existingShow = existingMovie?.shows.find((s) => s.date.getTime() === show.date.getTime());
+            const existingShow = existingMovie?.shows.find((s) => s.date === show.date);
             const showtimes = existingShow?.cinemas;
 
             if (showtimes && showtimes.length > 0) {
                 allShowtimesToInsert.push(
                     ...showtimes.flatMap((c) =>
                         c.showtimes.map((t) => ({
-                            dateTime: t.showDatetime,
+                            datetime: t.showDatetime,
                             version: t.version.short,
                             versionLong: t.version.long,
                             showUuid: show.uuid,
@@ -113,7 +114,7 @@ export const addMoviesToDb = async (movies: Movie[]) => {
                 .insert(showtimesTable)
                 .values(allShowtimesToInsert)
                 .onConflictDoNothing()
-                .returning({ dateTime: showtimesTable.dateTime });
+                .returning({ datetime: showtimesTable.datetime });
             insertedShowtimesCount = insertedShowtimes.length;
         }
 
@@ -122,12 +123,12 @@ export const addMoviesToDb = async (movies: Movie[]) => {
 };
 
 export const removeMoviesFromDb = async () => {
-    const today = new Date();
+    const today = dayjs().startOf("date");
 
     const returnedCounts = await db.transaction(async (tx) => {
         const deletedShows = await tx
             .delete(showsTable)
-            .where(lt(showsTable.date, today))
+            .where(lt(showsTable.date, today.format()))
             .returning({ movieUuid: showsTable.movieUuid });
         if (deletedShows.length === 0) return [0, 0];
 

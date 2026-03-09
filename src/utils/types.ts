@@ -3,7 +3,7 @@ interface MovieData {
     tmdbId: number | null;
     slug: string;
     title: string;
-    releaseDate: Date;
+    releaseDate: string | null;
     runtime: number;
     genres: string[];
     overview: string;
@@ -28,14 +28,14 @@ interface MovieData {
 }
 
 export interface Show {
-    date: Date;
+    date: string; // YYYY-MM-DDT00:00:00+hh:mm
     cinemas: {
         cinema: {
             name: string;
             id: number;
         };
         showtimes: {
-            showDatetime: Date;
+            showDatetime: string; // YYYY-MM-DDThh:mm:ss+hh:mm
             version: {
                 short: string;
                 long: string;
