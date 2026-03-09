@@ -82,6 +82,16 @@ const slugifyTitle = (title: string, cinenewsId: string) => {
         .replace(/^-+|-+$/g, "");
 };
 
+const displayNameFr = new Intl.DisplayNames(["fr"], { type: "language" });
+const languageCodeToFrenchName = (code: string) => {
+    const name = displayNameFr.of(code);
+    if (name) {
+        return name.charAt(0).toUpperCase() + name.slice(1);
+    } else {
+        return code;
+    }
+};
+
 const getAllMoviesUrl = async (): Promise<string[]> => {
     const moviesUrl = new Set<string>();
 
@@ -130,6 +140,9 @@ const getMovieShowtimes = async (cinenewsId: string) => {
             },
         );
         if (response.status !== 200) {
+            console.error(
+                `Failed to fetch showtimes for movie ID ${cinenewsId} on ${dateIterator.format("YYYY-MM-DD")}: ${response.statusText}`,
+            );
             throw new Error(
                 `Failed to fetch showtimes for movie ID ${cinenewsId} on ${dateIterator.format("YYYY-MM-DD")}`,
             );
@@ -183,6 +196,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                     headers: generateHeaders(),
                 });
                 if (response.status !== 200) {
+                    console.error(`Failed to fetch movie data for ${url}: ${response.statusText}`);
                     throw new Error(`Failed to fetch movie data for ${url}: ${response.statusText}`);
                 }
 
@@ -193,6 +207,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                 const cinenewsId = $page("[data-tbl-id]").attr("data-tbl-id") as string;
 
                 if (!cinenewsId) {
+                    console.error(`Failed to extract Cinenews ID for ${url}`);
                     throw new Error(`Failed to extract Cinenews ID for ${url}`);
                 }
 
@@ -207,6 +222,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                         },
                     );
                     if (response.status !== 200) {
+                        console.error(`Failed to fetch movie data from TMDB for ${imdbId}: ${response.statusText}`);
                         throw new Error(`Failed to fetch movie data from TMDB for ${imdbId}: ${response.statusText}`);
                     }
 
@@ -256,6 +272,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                     },
                 );
                 if (response.status !== 200) {
+                    console.error(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}: ${response.statusText}`);
                     throw new Error(`Failed to fetch TMDb data for movie ID ${movie.tmdbId}`);
                 }
 
@@ -276,7 +293,7 @@ const getAllMoviesData = async (moviesUrl: string[]) => {
                         runtime: data.runtime,
                         genres: data.genres.map((genre) => genre.name),
                         overview: data.overview,
-                        originalLanguage: data.original_language,
+                        originalLanguage: languageCodeToFrenchName(data.original_language),
                         directors: data.credits.crew
                             .filter(
                                 (member) =>
