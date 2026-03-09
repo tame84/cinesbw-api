@@ -7,15 +7,12 @@ export interface Poster {
 }
 
 export interface Backdrop {
-    small: string;
     medium: string;
     large: string;
 }
 
 export interface Video {
     key: string;
-    site: string;
-    type: string;
     name: string;
 }
 
