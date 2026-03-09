@@ -1,4 +1,23 @@
-import { date, integer, jsonb, pgTable, serial, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, serial, text, unique, uuid } from "drizzle-orm/pg-core";
+
+export interface Poster {
+    small: string;
+    medium: string;
+    large: string;
+}
+
+export interface Backdrop {
+    small: string;
+    medium: string;
+    large: string;
+}
+
+export interface Video {
+    key: string;
+    site: string;
+    type: string;
+    name: string;
+}
 
 export const cinemasTable = pgTable("cinemas", {
     id: integer("id").primaryKey(),
@@ -23,9 +42,9 @@ export const moviesTable = pgTable("movies", {
     directors: text("directors").array(),
     actors: text("actors").array(),
     overview: text("overview"),
-    backdrop: jsonb("backdrop"),
-    poster: jsonb("poster").$type<{ small: string; medium: string; large: string }>(),
-    videos: jsonb("videos").$type<{ name: string; key: string }>().array(),
+    backdrop: jsonb("backdrop").$type<Backdrop>(),
+    poster: jsonb("poster").$type<Poster>(),
+    videos: jsonb("videos").array().$type<Video[]>(),
 });
 
 export const moviesGenresTable = pgTable(
