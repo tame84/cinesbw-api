@@ -44,7 +44,10 @@ export const addMoviesToDb = async (movies: Movie[]) => {
         const insertedMovies = await tx
             .insert(moviesTable)
             .values(moviesToInsert)
-            .onConflictDoUpdate({ target: moviesTable.slug, set: { slug: moviesTable.slug } })
+            .onConflictDoUpdate({
+                target: moviesTable.slug,
+                set: moviesTable,
+            })
             .returning({ uuid: moviesTable.uuid, slug: moviesTable.slug });
 
         const allShowsToInsert: Array<{ date: string; movieUuid: string; movieSlug: string }> = [];
